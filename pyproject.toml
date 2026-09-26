@@ -1,0 +1,19 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "zen-gateway"
+version = "1.0.0"
+description = "OpenCode 免费模型外接与本地三协议网关"
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = [
+    "fastapi>=0.110.0",
+    "uvicorn[standard]>=0.28.0",
+    "httpx>=0.27.0",
+    "pydantic>=2.6.0",
+]
+
+[project.scripts]
+zen-gateway = "app.main:main"
