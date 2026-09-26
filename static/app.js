@@ -55,6 +55,7 @@ function app() {
     showLocalKey: false,
     restartingSidecar: false,
     savingConfig: false,
+    syncingModels: false,
 
     // Playground
     playModel: "mimo-v2.6-flash-free",
@@ -258,6 +259,35 @@ function app() {
       } catch (e) {}
     },
 
+    async syncModels() {
+      this.syncingModels = true;
+      try {
+        const resp = await fetch("/api/models/sync", {
+          method: "POST",
+          headers: this._headers(),
+        });
+        if (resp.ok) {
+          const data = await resp.json();
+          this.models = data.models || [];
+          const added = data.data?.added || [];
+          if (added.length > 0) {
+            this.toast(`同步成功！新发现 ${added.length} 个官方免费模型: ${added.join(", ")}`);
+          } else {
+            this.toast(`同步完成，当前共 ${data.data?.total || this.models.length} 个官方免费模型（已是最新）`);
+          }
+          if (this.models.length > 0 && !this.playModel) {
+            this.playModel = this.models[0].id;
+          }
+        } else {
+          this.toast("同步失败: " + resp.statusText);
+        }
+      } catch (e) {
+        this.toast("同步异常: " + e.message);
+      } finally {
+        this.syncingModels = false;
+      }
+    },
+
     addAlias() {
       if (!this.newAliasKey || !this.newAliasVal) return;
       this.aliases[this.newAliasKey.trim()] = this.newAliasVal.trim();
@@ -457,6 +487,27 @@ function app() {
       }
       this.diagTesting = false;
       this.toast("免费模型连通性诊断完成");
+    },
+
+    async testSingleModel(mId) {
+      this.diagResults[mId] = { status: "testing" };
+      try {
+        const resp = await fetch("/api/test", {
+          method: "POST",
+          headers: this._headers(),
+          body: JSON.stringify({ model: mId, prompt: "请回复 OK" }),
+        });
+        const data = await resp.json();
+        this.diagResults[mId] = data;
+        if (data.status === "success") {
+          this.toast(`${mId} 连通正常 (${data.latency_ms}ms)`);
+        } else {
+          this.toast(`${mId} 连通异常: ${data.error || "未知错误"}`);
+        }
+      } catch (e) {
+        this.diagResults[mId] = { status: "error", latency_ms: 0, error: e.message };
+        this.toast(`${mId} 测试失败: ${e.message}`);
+      }
     },
   };
 }

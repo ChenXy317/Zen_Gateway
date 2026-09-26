@@ -371,9 +371,22 @@ tailwind.config = {
     <!-- ============================================== -->
     <div x-show="tab === 'models'" class="space-y-4">
       <div class="rounded-2xl bg-zinc-900/50 backdrop-blur border border-zinc-800/80 p-5 space-y-5">
-        <div>
-          <h3 class="text-sm font-semibold text-zinc-100">OpenCode 支持模型清单</h3>
-          <p class="text-xs text-zinc-400 mt-0.5">高亮标星为官方内置免费层模型，已通过网关转换为标准 OpenAI / Anthropic 协议</p>
+        <div class="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-zinc-800/60">
+          <div>
+            <h3 class="text-sm font-semibold text-zinc-100">官方免费模型清单</h3>
+            <p class="text-xs text-zinc-400 mt-0.5">实时展示网关支持的 OpenCode 官方免费模型与元数据，已全量转接三协议</p>
+          </div>
+          <div class="flex items-center gap-2">
+            <button @click="runDiagnostics()" :disabled="diagTesting" class="px-3 py-1.5 rounded-xl bg-zinc-800 hover:bg-zinc-700 disabled:opacity-50 text-zinc-200 text-xs font-medium transition flex items-center gap-1.5">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+              <span x-text="diagTesting ? '正在探测...' : '测速诊断'"></span>
+            </button>
+            <button @click="syncModels()" :disabled="syncingModels" class="px-3 py-1.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 disabled:opacity-50 text-white text-xs font-medium transition flex items-center gap-1.5 shadow-sm shadow-emerald-500/20">
+              <svg x-show="!syncingModels" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg>
+              <span x-show="syncingModels" class="w-3 h-3 border-2 border-white/20 border-t-white rounded-full animate-spin"></span>
+              <span x-text="syncingModels ? '正在从官方拉取...' : '从官方同步免费模型'"></span>
+            </button>
+          </div>
         </div>
 
         <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -383,13 +396,20 @@ tailwind.config = {
                 <div class="flex items-center gap-2">
                   <span class="font-medium text-xs text-zinc-200 font-mono" x-text="m.id"></span>
                   <span x-show="m.is_free" class="px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-500/15 text-amber-300 ring-1 ring-amber-500/30">★ 免费</span>
+                  <span x-show="diagResults[m.id]?.status === 'success'" class="text-[10px] px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-300 font-mono" x-text="diagResults[m.id].latency_ms + 'ms'"></span>
+                  <span x-show="diagResults[m.id]?.status === 'error'" class="text-[10px] px-1.5 py-0.5 rounded bg-red-500/15 text-red-300 font-mono">不可用</span>
                 </div>
                 <span class="text-[10px] px-1.5 py-0.5 rounded" :class="m.verification_tier === 'heavy' ? 'bg-emerald-500/15 text-emerald-300' : 'bg-teal-500/15 text-teal-300'" x-text="m.verification_tier === 'heavy' ? '重校验 (Sidecar)' : '轻校验'"></span>
               </div>
               <p class="text-xs text-zinc-400 leading-relaxed" x-text="m.description"></p>
-              <div class="flex items-center gap-3 text-[11px] text-zinc-500 font-mono pt-1 border-t border-zinc-800/50">
-                <span>上下文: <span class="text-zinc-400" x-text="(m.context_window / 1000) + 'k'"></span></span>
-                <span x-show="m.support_reasoning" class="text-emerald-400">支持思考链推理</span>
+              <div class="flex items-center justify-between text-[11px] text-zinc-500 font-mono pt-1 border-t border-zinc-800/50">
+                <div class="flex items-center gap-3">
+                  <span>上下文: <span class="text-zinc-400" x-text="(m.context_window / 1000) + 'k'"></span></span>
+                  <span x-show="m.support_reasoning" class="text-emerald-400">支持思考链推理</span>
+                </div>
+                <button @click="testSingleModel(m.id)" :disabled="diagTesting" class="text-[11px] text-zinc-400 hover:text-emerald-400 transition">
+                  <span x-text="diagResults[m.id]?.status === 'testing' ? '测试中...' : '测速'"></span>
+                </button>
               </div>
             </div>
           </template>

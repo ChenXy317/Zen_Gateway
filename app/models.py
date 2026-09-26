@@ -143,5 +143,96 @@ class ModelRegistry:
         """更新模型别名映射表。"""
         self._aliases = dict(aliases)
 
+    async def sync_free_models(self, sidecar_base_url: str = "http://127.0.0.1:4096") -> dict[str, Any]:
+        """从官方 Sidecar 或云端动态同步最新免费模型列表与元数据。"""
+        import httpx
+        from .auth import opencode_auth
+
+        source = "sidecar"
+        free_models_raw: dict[str, dict[str, Any]] = {}
+
+        # 优先从本地 Sidecar 获取完整元数据
+        try:
+            async with httpx.AsyncClient(timeout=6.0) as client:
+                r = await client.get(f"{sidecar_base_url}/provider")
+                if r.status_code == 200:
+                    data = r.json()
+                    for p in data.get("all", []):
+                        if p.get("id") == "opencode":
+                            for mid, mdict in p.get("models", {}).items():
+                                if mid.endswith("-free"):
+                                    free_models_raw[mid] = mdict
+        except Exception:
+            pass
+
+        # 降级：从官方 Zen API 获取
+        if not free_models_raw:
+            source = "cloud"
+            try:
+                creds = opencode_auth.get_credentials()
+                headers = {
+                    "User-Agent": f"opencode/{creds.cli_version or '1.18.30'}/cli",
+                    "x-opencode-client": "cli",
+                }
+                if creds.api_key:
+                    headers["Authorization"] = f"Bearer {creds.api_key}"
+
+                async with httpx.AsyncClient(timeout=8.0) as client:
+                    r = await client.get("https://opencode.ai/zen/v1/models", headers=headers)
+                    if r.status_code == 200:
+                        data = r.json()
+                        m_list = data.get("data", []) if isinstance(data, dict) else (data if isinstance(data, list) else [])
+                        for item in m_list:
+                            mid = item.get("id", "")
+                            if mid.endswith("-free"):
+                                free_models_raw[mid] = {
+                                    "id": mid,
+                                    "name": mid.replace("-free", "").replace("-", " ").title() + " (Free)",
+                                }
+            except Exception:
+                pass
+
+        if not free_models_raw:
+            return {"status": "unchanged", "total": len(self.list_models()), "added": [], "source": "none"}
+
+        added: list[str] = []
+        for mid, meta in free_models_raw.items():
+            name = meta.get("name") or (mid.replace("-free", "").replace("-", " ").title() + " (Free)")
+            limits = meta.get("limit") or {}
+            caps = meta.get("capabilities") or {}
+
+            context_window = limits.get("context", 128000)
+            support_reasoning = bool(caps.get("reasoning", False) or "mimo" in mid.lower() or "longcat" in mid.lower())
+            verification_tier = "light" if ("bunny" in mid.lower() or "lightning" in mid.lower() or "preview" in mid.lower()) else "heavy"
+
+            desc = f"OpenCode 官方免费层模型，上下文 {context_window // 1000}k"
+            if support_reasoning:
+                desc += "，支持深度思考链"
+
+            if mid not in self._models:
+                added.append(mid)
+                self._models[mid] = ModelMeta(
+                    id=mid,
+                    name=name,
+                    provider="opencode",
+                    is_free=True,
+                    verification_tier=verification_tier,
+                    description=desc,
+                    context_window=context_window,
+                    support_reasoning=support_reasoning,
+                )
+            else:
+                existing = self._models[mid]
+                existing.name = name
+                existing.context_window = context_window
+                existing.support_reasoning = support_reasoning
+
+        return {
+            "status": "ok",
+            "total": len(self.list_models()),
+            "added": added,
+            "source": source,
+        }
+
 
 model_registry = ModelRegistry()

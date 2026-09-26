@@ -196,6 +196,18 @@ async def update_aliases(data: dict[str, str], _: None = Depends(require_admin_a
     return {"status": "ok", "aliases": model_registry.get_aliases()}
 
 
+@api_router.post("/models/sync")
+async def sync_models(_: None = Depends(require_admin_auth)) -> dict[str, Any]:
+    """手动从官方 Sidecar 或云端同步最新免费模型列表与状态。"""
+    res = await model_registry.sync_free_models(sidecar_base_url=sidecar_manager.base_url)
+    return {
+        "status": "ok",
+        "message": f"成功同步官方模型（总计 {res['total']} 个免费模型，新增 {len(res['added'])} 个）",
+        "data": res,
+        "models": model_registry.list_models(),
+    }
+
+
 @api_router.get("/logs")
 async def get_logs(
     limit: int = 50,
