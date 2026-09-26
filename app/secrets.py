@@ -14,6 +14,15 @@ def redact(val: str | None, prefix_len: int = 6, suffix_len: int = 4) -> str:
     return f"{s[:prefix_len]}...{s[-suffix_len:]}"
 
 
+def is_masked(val: str | None) -> bool:
+    """检测字符串是否为脱敏掩码格式。"""
+    if not val:
+        return False
+    s = str(val).strip()
+    return "..." in s
+
+
+
 def collect_secrets(*values: str | None) -> list[str]:
     """收集非空敏感字符列表。"""
     res = []

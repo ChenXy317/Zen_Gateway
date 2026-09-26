@@ -27,7 +27,7 @@ from .config import (
 from .converter.chat_anthropic import ir_to_anthropic_response
 from .converter.chat_responses import ir_to_openai_response, openai_models_response
 from .models import model_registry
-from .secrets import collect_secrets, redact_any
+from .secrets import collect_secrets, is_masked, redact_any
 from .sidecar import sidecar_manager
 from .stream import stream_anthropic_generator, stream_openai_generator
 from .transform import (
@@ -139,6 +139,16 @@ async def update_config(data: dict[str, Any], _: None = Depends(require_admin_au
     cfg = config_manager.config
     srv_in = data.get("server", {})
 
+    # 校验公网绑定安全性，防止失去密钥导致管理台死锁
+    target_host = srv_in.get("host", cfg.server.host)
+    if is_public_bind(target_host):
+        test_local = srv_in.get("local_api_key", cfg.server.local_api_key).strip()
+        test_admin = srv_in.get("admin_api_key", cfg.server.admin_api_key).strip()
+        effective_local = cfg.server.local_api_key if is_masked(test_local) else test_local
+        effective_admin = cfg.server.admin_api_key if is_masked(test_admin) else test_admin
+        if not (effective_admin or effective_local):
+            raise HTTPException(400, "绑定非本机地址时必须在配置中设置 admin_api_key 或 local_api_key，否则将导致管理控制台被锁定")
+
     if "default_model" in srv_in:
         cfg.server.default_model = srv_in["default_model"]
     if "engine_mode" in srv_in:
@@ -149,11 +159,11 @@ async def update_config(data: dict[str, Any], _: None = Depends(require_admin_au
         cfg.server.port = int(srv_in["port"])
     if "local_api_key" in srv_in:
         val = srv_in["local_api_key"].strip()
-        if val != "..." and not val.endswith("..."):
+        if not is_masked(val):
             cfg.server.local_api_key = val
     if "admin_api_key" in srv_in:
         val = srv_in["admin_api_key"].strip()
-        if val != "..." and not val.endswith("..."):
+        if not is_masked(val):
             cfg.server.admin_api_key = val
     if "sidecar_port" in srv_in:
         cfg.server.sidecar_port = int(srv_in["sidecar_port"])
@@ -521,7 +531,7 @@ def create_app() -> FastAPI:
     app.add_middleware(
         CORSMiddleware,
         allow_origins=["*"],
-        allow_credentials=True,
+        allow_credentials=False,
         allow_methods=["*"],
         allow_headers=["*"],
     )

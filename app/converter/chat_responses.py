@@ -44,11 +44,14 @@ def ir_delta_to_openai_chunk(
     chunk_id: str,
     model: str,
     delta: IRChunkDelta,
+    role: str | None = None,
     created: int | None = None,
 ) -> dict[str, Any]:
     """生成单帧 OpenAI 流式 chat.completion.chunk 字典。"""
     created_ts = created or int(time.time())
     delta_dict: dict[str, Any] = {}
+    if role is not None:
+        delta_dict["role"] = role
     if delta.text is not None:
         delta_dict["content"] = delta.text
     if delta.reasoning is not None:

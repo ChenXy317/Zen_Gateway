@@ -184,17 +184,24 @@ function app() {
     async saveConfig() {
       this.savingConfig = true;
       try {
+        const srv = {
+          host: this.serverCfg.host,
+          port: parseInt(this.serverCfg.port),
+          default_model: this.serverCfg.default_model,
+          engine_mode: this.serverCfg.engine_mode,
+          sidecar_port: parseInt(this.serverCfg.sidecar_port),
+          auto_start_sidecar: this.serverCfg.auto_start_sidecar,
+        };
+        // 过滤掩码占位符，仅在用户输入新密钥时提交
+        if (this.serverCfg.local_api_key !== undefined && !this.serverCfg.local_api_key.includes("...")) {
+          srv.local_api_key = this.serverCfg.local_api_key.trim();
+        }
+        if (this.serverCfg.admin_api_key !== undefined && !this.serverCfg.admin_api_key.includes("...")) {
+          srv.admin_api_key = this.serverCfg.admin_api_key.trim();
+        }
+
         const payload = {
-          server: {
-            host: this.serverCfg.host,
-            port: parseInt(this.serverCfg.port),
-            default_model: this.serverCfg.default_model,
-            engine_mode: this.serverCfg.engine_mode,
-            local_api_key: this.serverCfg.local_api_key,
-            admin_api_key: this.serverCfg.admin_api_key,
-            sidecar_port: parseInt(this.serverCfg.sidecar_port),
-            auto_start_sidecar: this.serverCfg.auto_start_sidecar,
-          },
+          server: srv,
           model_aliases: this.aliases,
         };
         const resp = await fetch("/api/config", {
@@ -206,7 +213,8 @@ function app() {
           this.toast("网关配置已成功保存");
           await this.loadConfig();
         } else {
-          this.toast("保存失败: " + resp.statusText);
+          const errData = await resp.json().catch(() => ({}));
+          this.toast("保存失败: " + (errData?.detail || resp.statusText));
         }
       } catch (e) {
         this.toast("保存异常: " + e.message);

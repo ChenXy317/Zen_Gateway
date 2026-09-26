@@ -80,47 +80,6 @@ DEFAULT_MODELS: list[ModelMeta] = [
         context_window=64000,
         support_reasoning=False,
     ),
-    # 常用商业与前沿模型兼容映射
-    ModelMeta(
-        id="deepseek-v4-flash",
-        name="DeepSeek V4 Flash",
-        provider="opencode",
-        is_free=False,
-        verification_tier="standard",
-        description="DeepSeek 高性价比模型",
-        context_window=128000,
-        support_reasoning=True,
-    ),
-    ModelMeta(
-        id="gemini-3.8-flash",
-        name="Gemini 3.8 Flash",
-        provider="opencode",
-        is_free=False,
-        verification_tier="standard",
-        description="Google 多模态高速度模型",
-        context_window=200000,
-        support_reasoning=True,
-    ),
-    ModelMeta(
-        id="glm-5",
-        name="GLM-5",
-        provider="opencode",
-        is_free=False,
-        verification_tier="standard",
-        description="智谱新一代通用大模型",
-        context_window=128000,
-        support_reasoning=False,
-    ),
-    ModelMeta(
-        id="gpt-5",
-        name="GPT-5",
-        provider="opencode",
-        is_free=False,
-        verification_tier="standard",
-        description="通用高级编程模型",
-        context_window=128000,
-        support_reasoning=True,
-    ),
 ]
 
 
@@ -159,9 +118,11 @@ class ModelRegistry:
         return raw
 
     def list_models(self) -> list[dict[str, Any]]:
-        """获取所有已注册模型元信息。"""
+        """获取所有已注册的官方免费模型元信息。"""
         res = []
         for m in self._models.values():
+            if not m.is_free:
+                continue
             res.append({
                 "id": m.id,
                 "name": m.name,

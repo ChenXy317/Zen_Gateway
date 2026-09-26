@@ -92,6 +92,8 @@ class SidecarManager:
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 text=True,
+                encoding="utf-8",
+                errors="replace",
             )
             self._is_managed = True
 
@@ -205,7 +207,34 @@ class SidecarManager:
         }
 
         queue: asyncio.Queue[dict[str, Any] | None] = asyncio.Queue()
+        sender_res: dict[str, Any] = {}
+        sender_done = asyncio.Event()
         done_flag = asyncio.Event()
+
+        # 启动消息发送任务
+        async def _sender():
+            try:
+                r = await client.post(
+                    f"{self.base_url}/session/{session_id}/message",
+                    json=payload,
+                    timeout=config_manager.config.server.timeout_seconds,
+                )
+                r.raise_for_status()
+                data = r.json()
+                toks = {}
+                for p in data.get("parts", []):
+                    if p.get("type") == "step-finish":
+                        toks = p.get("tokens", {})
+                if not toks:
+                    toks = data.get("info", {}).get("tokens", {})
+                sender_res["tokens"] = toks
+            except Exception as err:
+                sender_res["error"] = str(err)
+                await queue.put({"kind": "error", "error": str(err)})
+            finally:
+                sender_done.set()
+
+        sender_task = asyncio.create_task(_sender())
 
         # 启动后台任务监听 /event SSE
         async def _event_listener():
@@ -232,6 +261,12 @@ class SidecarManager:
                                         "delta": props.get("delta", ""),
                                     })
                                 elif ev_type == "session.idle":
+                                    # 收到闲置通知，确认消息发送任务已完成并提取统计
+                                    await sender_done.wait()
+                                    if "error" in sender_res:
+                                        await queue.put({"kind": "error", "error": sender_res["error"]})
+                                    else:
+                                        await queue.put({"kind": "finish", "tokens": sender_res.get("tokens", {})})
                                     done_flag.set()
                                     break
                             except Exception:
@@ -239,32 +274,19 @@ class SidecarManager:
             except Exception as e:
                 logger.debug("SSE 监听结束或中断: %s", e)
             finally:
+                # 兜底超时同步发送任务结果
+                if not sender_done.is_set():
+                    try:
+                        await asyncio.wait_for(sender_done.wait(), timeout=3.0)
+                    except Exception:
+                        pass
+                if "error" in sender_res:
+                    await queue.put({"kind": "error", "error": sender_res["error"]})
+                elif "tokens" in sender_res and not done_flag.is_set():
+                    await queue.put({"kind": "finish", "tokens": sender_res.get("tokens", {})})
                 await queue.put(None)
 
         listener_task = asyncio.create_task(_event_listener())
-
-        # 启动消息发送任务
-        async def _sender():
-            try:
-                r = await client.post(
-                    f"{self.base_url}/session/{session_id}/message",
-                    json=payload,
-                    timeout=config_manager.config.server.timeout_seconds,
-                )
-                r.raise_for_status()
-                data = r.json()
-                # 提取 finish tokens 汇总
-                tokens = {}
-                for p in data.get("parts", []):
-                    if p.get("type") == "step-finish":
-                        tokens = p.get("tokens", {})
-                await queue.put({"kind": "finish", "tokens": tokens})
-            except Exception as err:
-                await queue.put({"kind": "error", "error": str(err)})
-            finally:
-                done_flag.set()
-
-        sender_task = asyncio.create_task(_sender())
 
         try:
             while True:

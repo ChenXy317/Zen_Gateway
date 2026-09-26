@@ -87,6 +87,9 @@ class UpstreamDispatcher:
                 elif p_type == "step-finish":
                     tokens_dict = p.get("tokens", {})
 
+            if not tokens_dict:
+                tokens_dict = raw_data.get("info", {}).get("tokens", {})
+
             input_tok = tokens_dict.get("input", 0)
             output_tok = tokens_dict.get("output", 0)
             total_tok = tokens_dict.get("total", input_tok + output_tok)
@@ -121,6 +124,7 @@ class UpstreamDispatcher:
                 mode = "direct"
 
         if mode == "direct":
+            has_yielded = False
             try:
                 msgs = [{"role": m.role, "content": m.content} for m in req.messages]
                 if req.system_prompt:
@@ -143,15 +147,21 @@ class UpstreamDispatcher:
                             choice = cj.get("choices", [{}])[0]
                             delta_obj = choice.get("delta", {})
                             if "content" in delta_obj:
+                                has_yielded = True
                                 yield {"kind": "delta", "field": "text", "delta": delta_obj["content"]}
                             if "reasoning_content" in delta_obj:
+                                has_yielded = True
                                 yield {"kind": "delta", "field": "reasoning", "delta": delta_obj["reasoning_content"]}
                         except Exception:
                             pass
                 yield {"kind": "finish", "tokens": {}}
                 return
             except Exception as e:
-                logger.warning("直连流式调用遇到异常 (%s)，降级至 Sidecar 桥接", e)
+                if has_yielded:
+                    # 避免在已产生部分增量时重跑造成内容重复
+                    yield {"kind": "error", "error": f"直连流传输中断: {e}"}
+                    return
+                logger.warning("直连流式调用启动异常 (%s)，降级至 Sidecar 桥接", e)
                 pass
 
         # 默认与降级：使用 Sidecar 桥接流式

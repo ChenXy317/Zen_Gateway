@@ -8,24 +8,53 @@ from .ir import IRMessage, IRRequest
 from .models import model_registry
 
 
+import json
+
+
 def extract_system_and_messages(raw_messages: list[dict[str, Any]]) -> tuple[str | None, list[IRMessage]]:
-    """提取独立系统提示词与常规对话序列。"""
+    """提取独立系统提示词与常规对话序列，兼容工具调用上下文。"""
     system_prompts = []
     messages = []
     for m in raw_messages:
         role = m.get("role", "user")
         raw_content = m.get("content", "")
         if isinstance(raw_content, list):
-            # 展平多段文本内容
             buf = []
             for item in raw_content:
-                if isinstance(item, dict) and item.get("type") == "text":
-                    buf.append(item.get("text", ""))
+                if isinstance(item, dict):
+                    t = item.get("type")
+                    if t == "text":
+                        buf.append(item.get("text", ""))
+                    elif t == "tool_use":
+                        args_str = json.dumps(item.get("input", {}), ensure_ascii=False)
+                        buf.append(f"[Tool Call: {item.get('name')} (ID: {item.get('id')}) Args: {args_str}]")
+                    elif t == "tool_result":
+                        res_val = item.get("content", "")
+                        if isinstance(res_val, list):
+                            sub = [b.get("text", "") for b in res_val if isinstance(b, dict) and b.get("type") == "text"]
+                            res_val = "\n".join(sub)
+                        buf.append(f"[Tool Result (ID: {item.get('tool_use_id')}): {res_val}]")
+                    elif t == "thinking":
+                        buf.append(item.get("thinking", ""))
                 elif isinstance(item, str):
                     buf.append(item)
             content = "\n".join(buf)
         else:
             content = str(raw_content or "")
+
+        # 兼容 OpenAI tool_calls 字段
+        tool_calls = m.get("tool_calls")
+        if tool_calls and isinstance(tool_calls, list):
+            call_descs = []
+            for tc in tool_calls:
+                fn = tc.get("function", {})
+                call_descs.append(f"[Tool Call: {fn.get('name')} (ID: {tc.get('id')}) Args: {fn.get('arguments')}]")
+            content = (content + "\n" + "\n".join(call_descs)).strip()
+
+        # 兼容 OpenAI tool 角色
+        if role == "tool":
+            role = "user"
+            content = f"[Tool Result (Call ID: {m.get('tool_call_id', '')})]:\n{content}"
 
         if role == "system":
             system_prompts.append(content)

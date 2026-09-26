@@ -24,11 +24,12 @@ async def stream_openai_generator(
     output_tokens = 0
 
     try:
-        # 首帧通常输出 role
+        # 首帧声明 assistant 角色与空内容
         yield sse_format(ir_delta_to_openai_chunk(
             chunk_id=resp_id,
             model=model,
             delta=IRChunkDelta(text=""),
+            role="assistant",
         ))
 
         async for item in event_stream:
@@ -93,8 +94,11 @@ async def stream_anthropic_generator(
     input_tokens = 0
     output_tokens = 0
 
+    current_block_type: str | None = None
+    block_index = 0
+
     try:
-        # 1. message_start
+        # 1. 消息起始事件
         yield sse_format({
             "type": "message_start",
             "message": {
@@ -109,13 +113,6 @@ async def stream_anthropic_generator(
             },
         }, event="message_start")
 
-        # 2. content_block_start
-        yield sse_format({
-            "type": "content_block_start",
-            "index": 0,
-            "content_block": {"type": "text", "text": ""},
-        }, event="content_block_start")
-
         async for item in event_stream:
             kind = item.get("kind")
             if kind == "delta":
@@ -124,36 +121,72 @@ async def stream_anthropic_generator(
                     if on_ttft:
                         on_ttft((time.time() - start_time) * 1000)
 
+                field = item.get("field", "text")
                 text_val = item.get("delta", "")
                 output_tokens += 1
-                yield sse_format({
-                    "type": "content_block_delta",
-                    "index": 0,
-                    "delta": {"type": "text_delta", "text": text_val},
-                }, event="content_block_delta")
+
+                # 处理思考过程与正文内容块状态切换
+                if field == "reasoning":
+                    if current_block_type != "thinking":
+                        if current_block_type is not None:
+                            yield sse_format({"type": "content_block_stop", "index": block_index}, event="content_block_stop")
+                            block_index += 1
+                        yield sse_format({
+                            "type": "content_block_start",
+                            "index": block_index,
+                            "content_block": {"type": "thinking", "thinking": ""},
+                        }, event="content_block_start")
+                        current_block_type = "thinking"
+
+                    yield sse_format({
+                        "type": "content_block_delta",
+                        "index": block_index,
+                        "delta": {"type": "thinking_delta", "thinking": text_val},
+                    }, event="content_block_delta")
+
+                else:
+                    if current_block_type != "text":
+                        if current_block_type is not None:
+                            yield sse_format({"type": "content_block_stop", "index": block_index}, event="content_block_stop")
+                            block_index += 1
+                        yield sse_format({
+                            "type": "content_block_start",
+                            "index": block_index,
+                            "content_block": {"type": "text", "text": ""},
+                        }, event="content_block_start")
+                        current_block_type = "text"
+
+                    yield sse_format({
+                        "type": "content_block_delta",
+                        "index": block_index,
+                        "delta": {"type": "text_delta", "text": text_val},
+                    }, event="content_block_delta")
 
             elif kind == "finish":
                 tokens = item.get("tokens", {})
                 input_tokens = tokens.get("input", input_tokens)
                 output_tokens = tokens.get("output", output_tokens)
 
-        # 3. content_block_stop
-        yield sse_format({
-            "type": "content_block_stop",
-            "index": 0,
-        }, event="content_block_stop")
+        # 关闭最后一个内容块
+        if current_block_type is not None:
+            yield sse_format({"type": "content_block_stop", "index": block_index}, event="content_block_stop")
+        else:
+            # 无有效输出时补齐空正文块
+            yield sse_format({
+                "type": "content_block_start",
+                "index": 0,
+                "content_block": {"type": "text", "text": ""},
+            }, event="content_block_start")
+            yield sse_format({"type": "content_block_stop", "index": 0}, event="content_block_stop")
 
-        # 4. message_delta
+        # 消息完成事件
         yield sse_format({
             "type": "message_delta",
             "delta": {"stop_reason": "end_turn", "stop_sequence": None},
             "usage": {"output_tokens": output_tokens},
         }, event="message_delta")
 
-        # 5. message_stop
-        yield sse_format({
-            "type": "message_stop",
-        }, event="message_stop")
+        yield sse_format({"type": "message_stop"}, event="message_stop")
 
     finally:
         if on_finish:
