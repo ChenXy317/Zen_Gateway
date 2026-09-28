@@ -1,28 +1,152 @@
-/* 自定义样式与滚动条美化 */
-::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
-}
-::-webkit-scrollbar-track {
-  background: transparent;
-}
-::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.12);
-  border-radius: 9999px;
-}
-::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.22);
+/* 统一网关极简现代风格与强调色主题系统 */
+
+:root {
+  --accent: #10b981;
+  --accent-rgb: 16, 185, 129;
+  --accent-hover: #059669;
+  --accent-light: rgba(16, 185, 129, 0.1);
+  --accent-ring: rgba(16, 185, 129, 0.25);
+  --accent-text: #10b981;
 }
 
+/* 强调色方案 */
+[data-accent="indigo"] {
+  --accent: #6366f1;
+  --accent-rgb: 99, 102, 241;
+  --accent-hover: #4f46e5;
+  --accent-light: rgba(99, 102, 241, 0.1);
+  --accent-ring: rgba(99, 102, 241, 0.25);
+  --accent-text: #6366f1;
+}
+
+[data-accent="emerald"] {
+  --accent: #10b981;
+  --accent-rgb: 16, 185, 129;
+  --accent-hover: #059669;
+  --accent-light: rgba(16, 185, 129, 0.1);
+  --accent-ring: rgba(16, 185, 129, 0.25);
+  --accent-text: #10b981;
+}
+
+[data-accent="violet"] {
+  --accent: #8b5cf6;
+  --accent-rgb: 139, 92, 246;
+  --accent-hover: #7c3aed;
+  --accent-light: rgba(139, 92, 246, 0.1);
+  --accent-ring: rgba(139, 92, 246, 0.25);
+  --accent-text: #8b5cf6;
+}
+
+[data-accent="amber"] {
+  --accent: #f59e0b;
+  --accent-rgb: 245, 158, 11;
+  --accent-hover: #d97706;
+  --accent-light: rgba(245, 158, 11, 0.1);
+  --accent-ring: rgba(245, 158, 11, 0.25);
+  --accent-text: #f59e0b;
+}
+
+[data-accent="cyan"] {
+  --accent: #06b6d4;
+  --accent-rgb: 6, 182, 212;
+  --accent-hover: #0891b2;
+  --accent-light: rgba(6, 182, 212, 0.1);
+  --accent-ring: rgba(6, 182, 212, 0.25);
+  --accent-text: #06b6d4;
+}
+
+[data-accent="rose"] {
+  --accent: #f43f5e;
+  --accent-rgb: 244, 63, 94;
+  --accent-hover: #e11d48;
+  --accent-light: rgba(244, 63, 94, 0.1);
+  --accent-ring: rgba(244, 63, 94, 0.25);
+  --accent-text: #f43f5e;
+}
+
+[data-accent="zinc"] {
+  --accent: #18181b;
+  --accent-rgb: 24, 24, 27;
+  --accent-hover: #27272a;
+  --accent-light: rgba(113, 113, 122, 0.12);
+  --accent-ring: rgba(113, 113, 122, 0.25);
+  --accent-text: #18181b;
+}
+
+.dark[data-accent="zinc"],
+.dark [data-accent="zinc"] {
+  --accent: #f4f4f5;
+  --accent-rgb: 244, 244, 245;
+  --accent-hover: #e4e4e7;
+  --accent-light: rgba(244, 244, 245, 0.12);
+  --accent-ring: rgba(244, 244, 245, 0.25);
+  --accent-text: #fafafa;
+}
+
+/* 强调色实用类工具 */
+.bg-accent {
+  background-color: var(--accent) !important;
+}
+
+.hover\:bg-accent-hover:hover {
+  background-color: var(--accent-hover) !important;
+}
+
+.text-accent {
+  color: var(--accent-text) !important;
+}
+
+.border-accent {
+  border-color: var(--accent) !important;
+}
+
+.bg-accent-light {
+  background-color: var(--accent-light) !important;
+}
+
+.ring-accent {
+  --tw-ring-color: var(--accent-ring) !important;
+}
+
+/* Alpine 隐藏指令 */
 [x-cloak] {
   display: none !important;
 }
 
-/* 代码与打字机输出渐变呼吸光效 */
-@keyframes pulse-subtle {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.7; }
+/* 全局滚动条美化 */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
 }
-.pulse-subtle {
-  animation: pulse-subtle 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(161, 161, 170, 0.3);
+  border-radius: 9999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(161, 161, 170, 0.5);
+}
+
+.dark ::-webkit-scrollbar-thumb {
+  background: rgba(82, 82, 91, 0.4);
+}
+
+.dark ::-webkit-scrollbar-thumb:hover {
+  background: rgba(82, 82, 91, 0.7);
+}
+
+/* 微妙过渡效果 */
+* {
+  transition-property: color, background-color, border-color, text-decoration-color, fill, stroke;
+  transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+  transition-duration: 150ms;
+}
+
+pre, code, textarea, input, select, table {
+  transition: none;
 }

@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="zh-CN">
+<html lang="zh-CN" data-default-accent="emerald">
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -7,6 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <script src="/vendor/tailwind.js"></script>
+<script src="/static/theme.js"></script>
 <script src="/static/app.js"></script>
 <script defer src="/vendor/alpine.min.js"></script>
 <link rel="stylesheet" href="/static/style.css" />
@@ -16,15 +17,16 @@ tailwind.config = {
   theme: {
     extend: {
       fontFamily: {
-        sans: ['Inter', 'system-ui', 'sans-serif'],
-        mono: ['JetBrains Mono', 'monospace'],
+        sans: ['Inter', 'system-ui', '-apple-system', 'Segoe UI', 'Roboto', 'sans-serif'],
+        mono: ['JetBrains Mono', 'ui-monospace', 'Menlo', 'Consolas', 'monospace']
       },
       colors: {
-        zen: {
-          emerald: '#10b981',
-          teal: '#14b8a6',
-          cyan: '#06b6d4',
-          dark: '#07080b',
+        accent: {
+          DEFAULT: 'var(--accent)',
+          hover: 'var(--accent-hover)',
+          light: 'var(--accent-light)',
+          ring: 'var(--accent-ring)',
+          text: 'var(--accent-text)'
         }
       }
     }
@@ -32,113 +34,144 @@ tailwind.config = {
 }
 </script>
 </head>
-<body class="bg-[#07080b] text-zinc-100 min-h-screen antialiased selection:bg-emerald-500/30" x-data="app()" x-init="init()">
+<body class="bg-zinc-50 dark:bg-[#090a0f] text-zinc-800 dark:text-zinc-100 min-h-screen antialiased selection:bg-accent-light selection:text-accent font-sans" x-data="app()" x-init="init()">
+
+<!-- 悬浮 Toast 提示 -->
+<div x-show="toastVisible" x-cloak class="fixed bottom-6 right-6 z-50 flex items-center gap-2.5 px-4 py-2.5 rounded-xl shadow-lg border text-xs font-medium backdrop-blur-md transition-all duration-300 bg-white/95 dark:bg-zinc-900/95 border-zinc-200 dark:border-zinc-800 text-zinc-800 dark:text-zinc-100">
+  <span class="w-2 h-2 rounded-full bg-accent"></span>
+  <span x-text="toastMessage"></span>
+</div>
 
 <!-- 管理员鉴权弹窗 -->
-<div x-show="needAdmin" class="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-6" x-cloak>
-  <div class="w-full max-w-md rounded-2xl bg-zinc-900 border border-zinc-700/80 p-6 space-y-4 shadow-2xl">
+<div x-show="needAdmin" class="fixed inset-0 z-50 bg-black/50 dark:bg-black/80 backdrop-blur-sm flex items-center justify-center p-6" x-cloak>
+  <div class="w-full max-w-md rounded-2xl bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-6 space-y-4 shadow-xl">
     <div class="flex items-center gap-3">
-      <div class="w-9 h-9 rounded-xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center font-bold">ZG</div>
+      <div class="w-8 h-8 rounded-lg bg-accent-light text-accent flex items-center justify-center font-bold text-xs">ZG</div>
       <div>
-        <h3 class="text-base font-semibold text-zinc-100">管理 API 需要鉴权</h3>
-        <p class="text-xs text-zinc-400">请输入 admin_api_key 或 local_api_key 访问控制台</p>
+        <h3 class="text-base font-semibold text-zinc-900 dark:text-zinc-100">管理 API 需要鉴权</h3>
+        <p class="text-xs text-zinc-500 dark:text-zinc-400">请输入 admin_api_key 或 local_api_key 访问控制台</p>
       </div>
     </div>
-    <input x-model="adminKey" @keyup.enter="unlockAdmin()" type="password" placeholder="请输入管理密钥..." class="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2.5 text-sm text-zinc-200 focus:outline-none focus:border-emerald-500" />
-    <p x-show="adminError" class="text-xs text-red-400" x-text="adminError"></p>
-    <button @click="unlockAdmin()" class="w-full py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-medium transition shadow-lg shadow-emerald-600/20">进入管理台</button>
+    <input x-model="adminKey" @keyup.enter="unlockAdmin()" type="password" placeholder="请输入管理密钥..." class="w-full bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl px-3.5 py-2.5 text-xs text-zinc-900 dark:text-zinc-100 focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent" />
+    <p x-show="adminError" class="text-xs text-red-500" x-text="adminError"></p>
+    <button @click="unlockAdmin()" class="w-full py-2.5 rounded-xl bg-accent hover:bg-accent-hover text-white text-xs font-medium transition shadow-xs">进入管理台</button>
   </div>
 </div>
 
-<!-- 禅意极客光斑背景 -->
-<div class="fixed inset-0 -z-10 overflow-hidden pointer-events-none">
-  <div class="absolute -top-[35%] -right-[20%] w-[900px] h-[700px] rounded-full blur-[140px] opacity-[0.14]" style="background: radial-gradient(ellipse at center, #10b981 0%, transparent 70%)"></div>
-  <div class="absolute top-[40%] -left-[20%] w-[800px] h-[600px] rounded-full blur-[130px] opacity-[0.10]" style="background: radial-gradient(ellipse at center, #06b6d4 0%, transparent 70%)"></div>
-  <div class="absolute -bottom-[20%] right-[30%] w-[700px] h-[500px] rounded-full blur-[120px] opacity-[0.06]" style="background: radial-gradient(ellipse at center, #14b8a6 0%, transparent 70%)"></div>
-</div>
-
 <!-- 顶栏 Header -->
-<header class="sticky top-0 z-30 backdrop-blur-xl bg-[#07080b]/80 border-b border-zinc-800/70">
-  <div class="max-w-[1360px] mx-auto px-4 sm:px-6 lg:px-8 h-[64px] flex items-center justify-between gap-4">
-    <div class="flex items-center gap-4">
-      <div class="w-9 h-9 rounded-xl bg-gradient-to-br from-emerald-400 via-teal-500 to-cyan-600 flex items-center justify-center font-bold text-sm text-zinc-950 tracking-wider shadow-lg shadow-emerald-500/20 ring-1 ring-white/20">ZG</div>
-      <div class="leading-tight">
-        <div class="font-semibold text-[15px] tracking-tight flex items-center gap-2">
-          Zen Gateway
-          <span class="hidden sm:inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-emerald-500/15 text-emerald-300 ring-1 ring-emerald-500/30" x-text="version ? 'v' + version : ''"></span>
-        </div>
-        <div class="text-[12px] text-zinc-400 hidden sm:block">OpenCode 免费模型 · 三协议本地网关</div>
+<header class="sticky top-0 z-30 backdrop-blur-md bg-white/80 dark:bg-[#090a0f]/80 border-b border-zinc-200/80 dark:border-zinc-800/80">
+  <div class="max-w-[1360px] mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between gap-4">
+    <!-- 左侧 Logo 与运行状态 -->
+    <div class="flex items-center gap-3.5">
+      <div class="w-8 h-8 rounded-xl bg-accent-light text-accent flex items-center justify-center font-bold text-xs tracking-wider ring-1 ring-accent/20">
+        ZG
       </div>
-      <div class="hidden lg:flex items-center gap-2 ml-6 pl-6 border-l border-zinc-800/70">
-        <span class="relative flex h-2.5 w-2.5">
+      <div>
+        <div class="font-semibold text-sm tracking-tight flex items-center gap-2 text-zinc-900 dark:text-zinc-100">
+          <span>Zen Gateway</span>
+          <span class="text-[10px] font-mono px-1.5 py-0.5 rounded-md bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 border border-zinc-200/60 dark:border-zinc-700/60" x-text="version ? 'v' + version : 'v1.0'"></span>
+        </div>
+        <div class="text-[11px] text-zinc-500 dark:text-zinc-400 hidden sm:block">OpenCode 免费模型 · 三协议本地网关</div>
+      </div>
+      <div class="hidden md:flex items-center gap-2 ml-4 pl-4 border-l border-zinc-200 dark:border-zinc-800 text-xs">
+        <span class="relative flex h-2 w-2">
           <span x-show="healthOk" class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-          <span class="relative inline-flex rounded-full h-2.5 w-2.5" :class="healthOk ? 'bg-emerald-500 shadow-sm shadow-emerald-500/50' : 'bg-zinc-600'"></span>
+          <span class="relative inline-flex rounded-full h-2 w-2" :class="healthOk ? 'bg-emerald-500' : 'bg-zinc-400 dark:bg-zinc-600'"></span>
         </span>
-        <span class="text-xs font-medium" :class="healthOk ? 'text-emerald-300' : 'text-zinc-500'" x-text="healthOk ? '服务就绪' : '连接中断'"></span>
-        <span class="text-xs text-zinc-500 hidden xl:inline" x-text="healthOk ? '· 监听 ' + serverCfg.host + ':' + serverCfg.port : ''"></span>
+        <span class="text-[11px] font-medium" :class="healthOk ? 'text-emerald-600 dark:text-emerald-400' : 'text-zinc-400'" x-text="healthOk ? '服务就绪' : '连接中断'"></span>
+        <span class="text-[11px] text-zinc-400 font-mono hidden lg:inline" x-text="healthOk ? '(' + serverCfg.host + ':' + serverCfg.port + ')' : ''"></span>
       </div>
     </div>
 
-    <!-- 右侧 Base URL 快速复制 -->
-    <div class="flex items-center gap-3">
-      <div class="group flex items-center gap-2 pl-3 pr-1 py-1 rounded-full bg-zinc-900/90 border border-zinc-800 hover:border-zinc-700 transition">
-        <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 hidden sm:block"></span>
-        <span class="font-mono text-xs text-zinc-300 max-w-[200px] truncate" x-text="gatewayUrl"></span>
-        <button @click="copy(gatewayUrl)" class="w-7 h-7 rounded-full bg-zinc-800 group-hover:bg-zinc-700 flex items-center justify-center transition" title="复制 Base URL">
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="text-zinc-400"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v3"/></svg>
+    <!-- 中间 Base URL -->
+    <div class="hidden sm:flex items-center">
+      <div class="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-zinc-100 dark:bg-zinc-900/80 border border-zinc-200 dark:border-zinc-800 text-xs">
+        <span class="text-zinc-400 font-medium">Base URL</span>
+        <span class="font-mono text-zinc-700 dark:text-zinc-300" x-text="gatewayUrl"></span>
+        <button @click="copy(gatewayUrl)" class="p-1 rounded-lg hover:bg-zinc-200 dark:hover:bg-zinc-800 text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200 transition" title="复制 Base URL">
+          <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v3"/></svg>
         </button>
       </div>
+    </div>
+
+    <!-- 右侧：主题设置与强调色 -->
+    <div class="flex items-center gap-2">
+      <!-- 强调色选择菜单 -->
+      <div class="relative" @click.away="showThemeMenu = false">
+        <button @click="showThemeMenu = !showThemeMenu" class="h-8 px-2.5 rounded-xl border border-zinc-200 dark:border-zinc-800 hover:bg-zinc-100 dark:hover:bg-zinc-800/80 flex items-center gap-1.5 text-xs text-zinc-600 dark:text-zinc-300 transition" title="切换主题强调色">
+          <span class="w-2.5 h-2.5 rounded-full" :style="'background-color: var(--accent)'"></span>
+          <span class="hidden md:inline text-[11px]">配色</span>
+          <svg class="w-3 h-3 text-zinc-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg>
+        </button>
+        <!-- 下拉色盘 -->
+        <div x-show="showThemeMenu" x-cloak class="absolute right-0 mt-2 w-40 p-2 rounded-2xl bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 shadow-xl z-50 space-y-1">
+          <div class="text-[10px] font-semibold text-zinc-400 px-2 py-1">选择强调色</div>
+          <template x-for="c in colorOptions" :key="c.id">
+            <button @click="setAccent(c.id); showThemeMenu = false" class="w-full flex items-center justify-between px-2.5 py-1.5 rounded-xl text-xs hover:bg-zinc-100 dark:hover:bg-zinc-800 transition" :class="accentColor === c.id ? 'font-medium text-accent' : 'text-zinc-600 dark:text-zinc-400'">
+              <div class="flex items-center gap-2">
+                <span class="w-2.5 h-2.5 rounded-full" :style="'background-color: '+c.hex"></span>
+                <span x-text="c.name"></span>
+              </div>
+              <span x-show="accentColor === c.id" class="text-xs">✓</span>
+            </button>
+          </template>
+        </div>
+      </div>
+
+      <!-- 明暗模式切换按钮 -->
+      <button @click="toggleThemeMode()" class="w-8 h-8 rounded-xl border border-zinc-200 dark:border-zinc-800 hover:bg-zinc-100 dark:hover:bg-zinc-800/80 flex items-center justify-center text-zinc-600 dark:text-zinc-300 transition" :title="themeMode === 'dark' ? '切换为亮色模式' : '切换为暗色模式'">
+        <svg x-show="themeMode === 'dark' || (themeMode === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches)" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></svg>
+        <svg x-show="themeMode === 'light' || (themeMode === 'system' && !window.matchMedia('(prefers-color-scheme: dark)').matches)" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/></svg>
+      </button>
     </div>
   </div>
 </header>
 
 <!-- 主布局两列 -->
-<div class="max-w-[1360px] mx-auto px-4 sm:px-6 lg:px-8 py-6 lg:py-8 grid grid-cols-1 lg:grid-cols-[360px_1fr] gap-6 items-start">
-  
+<main class="max-w-[1360px] mx-auto px-4 sm:px-6 lg:px-8 py-6 lg:py-8 grid grid-cols-1 lg:grid-cols-[360px_1fr] gap-6 items-start">
   <!-- 左侧控制面板 -->
-  <div class="space-y-4 lg:sticky lg:top-[84px]">
-    
+  <aside class="space-y-4 lg:sticky lg:top-24">
     <!-- 卡片 1: OpenCode 凭据与 Sidecar 状态 -->
-    <div class="rounded-2xl bg-zinc-900/50 backdrop-blur border border-zinc-800/80 overflow-hidden shadow-sm">
-      <div class="px-4 py-3 flex items-center justify-between border-b border-zinc-800/50 bg-zinc-900/40">
+    <div class="rounded-2xl bg-white dark:bg-zinc-900/60 border border-zinc-200/80 dark:border-zinc-800/80 shadow-xs overflow-hidden">
+      <div class="px-4 py-3 flex items-center justify-between border-b border-zinc-100 dark:border-zinc-800/60">
         <div class="flex items-center gap-2">
-          <span class="w-6 h-6 rounded-lg bg-emerald-500/15 flex items-center justify-center text-emerald-400 text-[10px] font-bold">OC</span>
-          <span class="text-sm font-medium">OpenCode 运行态</span>
+          <span class="w-6 h-6 rounded-lg bg-accent-light text-accent flex items-center justify-center text-[10px] font-bold">OC</span>
+          <span class="text-xs font-semibold text-zinc-900 dark:text-zinc-100">OpenCode 运行态</span>
         </div>
-        <span class="text-[11px] px-2 py-0.5 rounded ring-1" :class="auth.logged_in ? 'bg-emerald-500/10 text-emerald-300 ring-emerald-500/20' : 'bg-red-500/10 text-red-300 ring-red-500/20'" x-text="auth.logged_in ? '凭据正常' : '未检测到登录'"></span>
+        <span class="text-[11px] px-2 py-0.5 rounded-full font-medium" :class="auth.logged_in ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400' : 'bg-red-500/10 text-red-600 dark:text-red-400'" x-text="auth.logged_in ? '凭据正常' : '未检测到登录'"></span>
       </div>
       
-      <div class="p-4 space-y-3">
-        <div x-show="auth.logged_in" class="space-y-2 text-xs">
-          <div class="flex justify-between items-center text-zinc-400">
+      <div class="p-4 space-y-3.5">
+        <div x-show="auth.logged_in" class="space-y-1.5 text-xs">
+          <div class="flex justify-between items-center text-zinc-500 dark:text-zinc-400">
             <span>官方凭据 Key</span>
-            <span class="font-mono text-zinc-200" x-text="auth.masked_key || '—'"></span>
+            <span class="font-mono text-zinc-800 dark:text-zinc-200" x-text="auth.masked_key || '—'"></span>
           </div>
-          <div class="flex justify-between items-center text-zinc-400">
+          <div class="flex justify-between items-center text-zinc-500 dark:text-zinc-400">
             <span>CLI 探测版本</span>
-            <span class="font-mono text-emerald-400" x-text="auth.cli_version ? 'v' + auth.cli_version : '未检测到 CLI'"></span>
+            <span class="font-mono text-accent" x-text="auth.cli_version ? 'v' + auth.cli_version : '未检测到 CLI'"></span>
           </div>
-          <div class="flex justify-between items-center text-zinc-400">
-            <span>凭据存储路径</span>
-            <span class="font-mono text-zinc-400 text-[11px] truncate max-w-[200px]" :title="auth.auth_file" x-text="auth.auth_file || '—'"></span>
+          <div class="flex justify-between items-center text-zinc-500 dark:text-zinc-400">
+            <span>凭据路径</span>
+            <span class="font-mono text-zinc-400 text-[11px] truncate max-w-[180px]" :title="auth.auth_file" x-text="auth.auth_file || '—'"></span>
           </div>
         </div>
-        <div x-show="!auth.logged_in" class="p-2.5 rounded-xl bg-red-500/10 border border-red-500/20 text-xs text-red-300" x-text="auth.error"></div>
+        <div x-show="!auth.logged_in" class="p-2.5 rounded-xl bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-900 text-xs text-red-600 dark:text-red-400" x-text="auth.error"></div>
 
         <!-- 本地 Sidecar 桥接状态条 -->
-        <div class="pt-2 border-t border-zinc-800/60">
-          <div class="p-2.5 rounded-xl bg-zinc-950/70 border border-zinc-800/70 space-y-2">
+        <div class="pt-2 border-t border-zinc-100 dark:border-zinc-800/60">
+          <div class="p-3 rounded-xl bg-zinc-50 dark:bg-zinc-950/60 border border-zinc-200/60 dark:border-zinc-800/60 space-y-2">
             <div class="flex items-center justify-between">
               <div class="flex items-center gap-1.5">
-                <span class="w-2 h-2 rounded-full" :class="sidecar.healthy ? 'bg-emerald-400 animate-pulse' : 'bg-amber-400'"></span>
-                <span class="text-xs font-semibold text-zinc-200">Sidecar 官方中继</span>
+                <span class="w-2 h-2 rounded-full" :class="sidecar.healthy ? 'bg-emerald-500 animate-pulse' : 'bg-amber-400'"></span>
+                <span class="text-xs font-semibold text-zinc-800 dark:text-zinc-200">Sidecar 官方通道</span>
               </div>
-              <span class="text-[10px] px-1.5 py-0.5 rounded" :class="sidecar.healthy ? 'bg-emerald-500/15 text-emerald-300' : 'bg-zinc-800 text-zinc-400'" x-text="sidecar.healthy ? '在线 (端口 ' + (serverCfg.sidecar_port||4096) + ')' : '离线'"></span>
+              <span class="text-[10px] px-1.5 py-0.5 rounded-md font-mono" :class="sidecar.healthy ? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400' : 'bg-zinc-200 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400'" x-text="sidecar.healthy ? '端口 ' + (serverCfg.sidecar_port||4096) : '离线'"></span>
             </div>
-            <div class="flex items-center justify-between text-[11px] text-zinc-400">
-              <span>运行进程 PID: <span class="font-mono text-zinc-300" x-text="sidecar.pid || '无'"></span></span>
-              <button @click="restartSidecar()" :disabled="restartingSidecar" class="px-2 py-0.5 rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-[11px] transition">
-                <span x-text="restartingSidecar ? '重启中...' : '重启中继'"></span>
+            <div class="flex items-center justify-between text-[11px] text-zinc-500 dark:text-zinc-400">
+              <span>进程 PID: <span class="font-mono text-zinc-700 dark:text-zinc-300" x-text="sidecar.pid || '无'"></span></span>
+              <button @click="restartSidecar()" :disabled="restartingSidecar" class="px-2 py-0.5 rounded-lg bg-zinc-200/80 hover:bg-zinc-300 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-200 text-[11px] transition">
+                <span x-text="restartingSidecar ? '重启中...' : '重启通道'"></span>
               </button>
             </div>
           </div>
@@ -147,141 +180,105 @@ tailwind.config = {
     </div>
 
     <!-- 卡片 2: 引擎模式与网关配置 -->
-    <div class="rounded-2xl bg-zinc-900/50 backdrop-blur border border-zinc-800/80 overflow-hidden shadow-sm">
-      <div class="px-4 py-3 flex items-center justify-between border-b border-zinc-800/50 bg-zinc-900/40">
-        <div class="flex items-center gap-2">
-          <span class="w-6 h-6 rounded-lg bg-teal-500/15 flex items-center justify-center text-teal-400 text-[10px] font-bold"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20a8 8 0 1 0 0-16 8 8 0 0 0 0 16z"/><path d="M12 14a2 2 0 1 0 0-4 2 2 0 0 0 0 4z"/></svg></span>
-          <span class="text-sm font-medium">网关引擎与安全配置</span>
+    <div class="rounded-2xl bg-white dark:bg-zinc-900/60 border border-zinc-200/80 dark:border-zinc-800/80 shadow-xs p-4 space-y-3.5">
+      <div class="text-xs font-semibold text-zinc-900 dark:text-zinc-100">网关引擎与安全配置</div>
+
+      <!-- 引擎模式选择 -->
+      <div>
+        <label class="block text-[11px] font-medium text-zinc-500 dark:text-zinc-400 mb-1">中继引擎模式</label>
+        <div class="grid grid-cols-3 gap-1.5 p-1 rounded-xl bg-zinc-100 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 text-xs">
+          <button @click="serverCfg.engine_mode = 'sidecar'" :class="serverCfg.engine_mode === 'sidecar' ? 'bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 font-medium shadow-xs' : 'text-zinc-600 dark:text-zinc-400'" class="py-1.5 rounded-lg text-center transition">
+            模式 B 中继
+          </button>
+          <button @click="serverCfg.engine_mode = 'auto'" :class="serverCfg.engine_mode === 'auto' ? 'bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 font-medium shadow-xs' : 'text-zinc-600 dark:text-zinc-400'" class="py-1.5 rounded-lg text-center transition">
+            智能自动
+          </button>
+          <button @click="serverCfg.engine_mode = 'direct'" :class="serverCfg.engine_mode === 'direct' ? 'bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 font-medium shadow-xs' : 'text-zinc-600 dark:text-zinc-400'" class="py-1.5 rounded-lg text-center transition">
+            模式 A 伪装
+          </button>
         </div>
+        <p class="text-[10px] text-zinc-400 mt-1" x-text="serverCfg.engine_mode === 'sidecar' ? '推荐: 官方握手通道，天然免 403 阻断' : (serverCfg.engine_mode === 'auto' ? '智能决策: 重校验走 Sidecar，轻校验直连' : '协议逆向直连伪装，免常驻后台进程')"></p>
       </div>
 
-      <div class="p-4 space-y-3">
-        <!-- 引擎模式选择 -->
-        <div>
-          <label class="block text-[11px] font-medium text-zinc-400 mb-1">中继引擎模式</label>
-          <div class="grid grid-cols-3 gap-1.5 p-1 rounded-xl bg-zinc-950/80 border border-zinc-800 text-xs">
-            <button @click="serverCfg.engine_mode = 'sidecar'" :class="serverCfg.engine_mode === 'sidecar' ? 'bg-emerald-600 text-white font-medium shadow' : 'text-zinc-400 hover:text-zinc-200'" class="py-1.5 rounded-lg text-center transition">
-              模式 B 中继
-            </button>
-            <button @click="serverCfg.engine_mode = 'auto'" :class="serverCfg.engine_mode === 'auto' ? 'bg-teal-600 text-white font-medium shadow' : 'text-zinc-400 hover:text-zinc-200'" class="py-1.5 rounded-lg text-center transition">
-              智能自动
-            </button>
-            <button @click="serverCfg.engine_mode = 'direct'" :class="serverCfg.engine_mode === 'direct' ? 'bg-zinc-700 text-white font-medium shadow' : 'text-zinc-400 hover:text-zinc-200'" class="py-1.5 rounded-lg text-center transition">
-              模式 A 伪装
-            </button>
-          </div>
-          <p class="text-[10px] text-zinc-500 mt-1" x-text="serverCfg.engine_mode === 'sidecar' ? '推荐: 100% 官方合法握手通道，天然免 403 阻断' : (serverCfg.engine_mode === 'auto' ? '智能决策: 重校验走 Sidecar，轻校验尝试直连' : '协议逆向直连伪装，免常驻后台进程')"></p>
-        </div>
-
-        <!-- 监听 Host / Port -->
-        <div class="grid grid-cols-[1fr_110px] gap-3">
-          <label class="block">
-            <span class="text-[11px] font-medium text-zinc-400">监听 Host</span>
-            <input x-model="serverCfg.host" class="mt-1 w-full bg-zinc-950/70 border border-zinc-800 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-emerald-500 transition" />
-          </label>
-          <label class="block">
-            <span class="text-[11px] font-medium text-zinc-400">监听端口</span>
-            <input x-model.number="serverCfg.port" type="number" class="mt-1 w-full bg-zinc-950/70 border border-zinc-800 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-emerald-500 transition" />
-          </label>
-        </div>
-
-        <!-- 默认模型 -->
+      <!-- 监听 Host / Port -->
+      <div class="grid grid-cols-[1fr_100px] gap-2.5">
         <label class="block">
-          <span class="text-[11px] font-medium text-zinc-400">默认模型 (Default Model)</span>
-          <select x-model="serverCfg.default_model" class="mt-1 w-full bg-zinc-950/70 border border-zinc-800 rounded-lg px-3 py-2 text-sm text-zinc-200 focus:outline-none focus:border-emerald-500">
-            <template x-for="m in models" :key="m.id">
-              <option :value="m.id" x-text="m.name + (m.is_free ? ' [免费]' : '')"></option>
-            </template>
-          </select>
+          <span class="text-[11px] font-medium text-zinc-500 dark:text-zinc-400">监听 Host</span>
+          <input x-model="serverCfg.host" class="mt-1 w-full bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl px-3 py-1.5 text-xs text-zinc-900 dark:text-zinc-100 focus:outline-none focus:border-accent" />
         </label>
-
-        <!-- 本地鉴权 Key -->
         <label class="block">
-          <span class="text-[11px] font-medium text-zinc-400">入站调用 API Key (本地鉴权)</span>
-          <div class="mt-1 flex gap-2">
-            <input :type="showLocalKey ? 'text' : 'password'" x-model="serverCfg.local_api_key" placeholder="留空为本地免鉴权 · sk-zen-..." class="flex-1 bg-zinc-950/70 border border-zinc-800 rounded-lg px-3 py-2 text-sm placeholder:text-zinc-600 focus:outline-none focus:border-emerald-500 transition" />
-            <button @click="showLocalKey = !showLocalKey" class="px-2.5 py-2 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-xs font-medium transition" x-text="showLocalKey ? '隐藏' : '显示'"></button>
-          </div>
-          <span class="text-[10px] text-zinc-500" x-text="serverCfg.has_local_api_key ? '已配置: 外部工具调用需携带此 Bearer Token' : '当前为空: 本地开发工具可免 Key 直接无感调用'"></span>
+          <span class="text-[11px] font-medium text-zinc-500 dark:text-zinc-400">端口</span>
+          <input x-model.number="serverCfg.port" type="number" class="mt-1 w-full bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl px-3 py-1.5 text-xs text-zinc-900 dark:text-zinc-100 focus:outline-none focus:border-accent" />
         </label>
-
-        <!-- 管理 Key -->
-        <label class="block">
-          <span class="text-[11px] font-medium text-zinc-400">管理控制台 API Key</span>
-          <input :type="showLocalKey ? 'text' : 'password'" x-model="serverCfg.admin_api_key" placeholder="留空仅允许本地访问 · admin-..." class="mt-1 w-full bg-zinc-950/70 border border-zinc-800 rounded-lg px-3 py-2 text-sm placeholder:text-zinc-600 focus:outline-none focus:border-emerald-500 transition" />
-        </label>
-
-        <!-- 保存按钮 -->
-        <button @click="saveConfig()" :disabled="savingConfig" class="w-full py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white text-sm font-medium transition shadow-lg shadow-emerald-600/20">
-          <span x-text="savingConfig ? '正在保存...' : '保存网关配置'"></span>
-        </button>
       </div>
+
+      <!-- 默认模型 -->
+      <label class="block">
+        <span class="text-[11px] font-medium text-zinc-500 dark:text-zinc-400">默认模型</span>
+        <select x-model="serverCfg.default_model" class="mt-1 w-full bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl px-3 py-1.5 text-xs text-zinc-900 dark:text-zinc-100 focus:outline-none focus:border-accent">
+          <template x-for="m in models" :key="m.id">
+            <option :value="m.id" x-text="m.name + (m.is_free ? ' [免费]' : '')"></option>
+          </template>
+        </select>
+      </label>
+
+      <!-- 本地鉴权 Key -->
+      <label class="block">
+        <span class="text-[11px] font-medium text-zinc-500 dark:text-zinc-400">入站调用 API Key (本地鉴权)</span>
+        <div class="mt-1 flex gap-2">
+          <input :type="showLocalKey ? 'text' : 'password'" x-model="serverCfg.local_api_key" placeholder="留空为本地免鉴权" class="flex-1 bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl px-3 py-1.5 text-xs text-zinc-900 dark:text-zinc-100 focus:outline-none focus:border-accent" />
+          <button @click="showLocalKey = !showLocalKey" class="px-2.5 py-1.5 rounded-xl bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 text-xs font-medium transition" x-text="showLocalKey ? '隐藏' : '显示'"></button>
+        </div>
+      </label>
+
+      <!-- 保存按钮 -->
+      <button @click="saveConfig()" :disabled="savingConfig" class="w-full py-2 rounded-xl bg-accent hover:bg-accent-hover text-white text-xs font-medium transition shadow-xs">
+        <span x-text="savingConfig ? '正在保存...' : '保存网关配置'"></span>
+      </button>
     </div>
 
     <!-- 卡片 3: 外部工具快速对接指引 -->
-    <div class="rounded-2xl bg-zinc-900/50 backdrop-blur border border-zinc-800/80 p-4 space-y-3">
-      <div class="flex items-center gap-2">
-        <span class="w-2 h-2 rounded-full bg-cyan-400"></span>
-        <span class="text-xs font-semibold text-zinc-200">开发工具无感接入指引</span>
-      </div>
-
-      <!-- Cursor -->
-      <div class="p-2.5 rounded-xl bg-zinc-950/60 border border-zinc-800/60 space-y-1.5 text-xs">
-        <div class="flex justify-between items-center font-medium text-zinc-300">
-          <span>Cursor / OpenAI SDK 对接</span>
-          <button @click="copy(gatewayUrl)" class="text-emerald-400 hover:text-emerald-300 text-[11px]">复制 Base URL</button>
+    <div class="rounded-2xl bg-white dark:bg-zinc-900/60 border border-zinc-200/80 dark:border-zinc-800/80 shadow-xs p-4 space-y-3 text-xs">
+      <div class="font-semibold text-zinc-900 dark:text-zinc-100">外部工具无感接入</div>
+      <div class="space-y-2.5">
+        <div>
+          <div class="text-zinc-500 dark:text-zinc-400 mb-1 flex items-center justify-between">
+            <span>Cursor / OpenAI SDK</span>
+            <button @click="copy(gatewayUrl)" class="text-[10px] text-accent hover:underline">复制 Base URL</button>
+          </div>
+          <div class="p-2.5 rounded-xl bg-zinc-50 dark:bg-zinc-950 border border-zinc-200/70 dark:border-zinc-800 font-mono text-[11px] text-zinc-700 dark:text-zinc-300 select-all overflow-x-auto" x-text="gatewayUrl"></div>
         </div>
-        <p class="text-[11px] text-zinc-400 font-mono select-all" x-text="gatewayUrl"></p>
-        <p class="text-[10px] text-zinc-500">在 Cursor 设置中将 OpenAI Base URL 设置为上述地址，模型填入 <code class="text-zinc-300">mimo-v2.6-flash-free</code> 即可。</p>
-      </div>
-
-      <!-- Claude Code -->
-      <div class="p-2.5 rounded-xl bg-zinc-950/60 border border-zinc-800/60 space-y-1.5 text-xs">
-        <div class="flex justify-between items-center font-medium text-zinc-300">
-          <span>Claude Code 对接</span>
-          <button @click="copy('export ANTHROPIC_BASE_URL=' + gatewayUrl + '\nexport ANTHROPIC_API_KEY=sk-zen-local')" class="text-cyan-400 hover:text-cyan-300 text-[11px]">复制环境变量</button>
-        </div>
-        <div class="p-1.5 rounded bg-zinc-900 font-mono text-[10px] text-zinc-400 space-y-0.5">
-          <div>ANTHROPIC_BASE_URL=<span class="text-zinc-200" x-text="gatewayUrl"></span></div>
-          <div>ANTHROPIC_API_KEY=<span class="text-zinc-200">sk-zen-local</span></div>
+        <div>
+          <div class="text-zinc-500 dark:text-zinc-400 mb-1 flex items-center justify-between">
+            <span>Claude Code</span>
+            <button @click="copy('export ANTHROPIC_BASE_URL=' + gatewayUrl + '\nexport ANTHROPIC_API_KEY=sk-zen-local')" class="text-[10px] text-accent hover:underline">复制指令</button>
+          </div>
+          <div class="p-2.5 rounded-xl bg-zinc-50 dark:bg-zinc-950 border border-zinc-200/70 dark:border-zinc-800 font-mono text-[11px] text-zinc-700 dark:text-zinc-300 select-all overflow-x-auto">
+            export ANTHROPIC_BASE_URL=<span x-text="gatewayUrl"></span><br>
+            export ANTHROPIC_API_KEY=sk-zen-local
+          </div>
         </div>
       </div>
     </div>
-
-  </div>
+  </aside>
 
   <!-- 右侧主工作区 -->
-  <div class="space-y-4">
+  <section class="space-y-5">
     <!-- Tab 导航栏 -->
-    <div class="flex items-center gap-2 p-1.5 rounded-2xl bg-zinc-900/60 border border-zinc-800/80 backdrop-blur">
-      <button @click="tab = 'play'" :class="tab === 'play' ? 'bg-gradient-to-r from-emerald-600 to-teal-600 text-white shadow-md' : 'text-zinc-400 hover:text-zinc-200'" class="flex-1 py-2 px-3 rounded-xl text-xs sm:text-sm font-medium transition flex items-center justify-center gap-1.5">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
-        <span>调试演练场 (Playground)</span>
-      </button>
-      <button @click="tab = 'models'" :class="tab === 'models' ? 'bg-gradient-to-r from-emerald-600 to-teal-600 text-white shadow-md' : 'text-zinc-400 hover:text-zinc-200'" class="flex-1 py-2 px-3 rounded-xl text-xs sm:text-sm font-medium transition flex items-center justify-center gap-1.5">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
-        <span>模型矩阵 (Models)</span>
-      </button>
-      <button @click="tab = 'diagnostics'" :class="tab === 'diagnostics' ? 'bg-gradient-to-r from-emerald-600 to-teal-600 text-white shadow-md' : 'text-zinc-400 hover:text-zinc-200'" class="flex-1 py-2 px-3 rounded-xl text-xs sm:text-sm font-medium transition flex items-center justify-center gap-1.5">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
-        <span>连通性诊断 (Diagnostics)</span>
-      </button>
-      <button @click="tab = 'logs'; fetchLogs()" :class="tab === 'logs' ? 'bg-gradient-to-r from-emerald-600 to-teal-600 text-white shadow-md' : 'text-zinc-400 hover:text-zinc-200'" class="flex-1 py-2 px-3 rounded-xl text-xs sm:text-sm font-medium transition flex items-center justify-center gap-1.5">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
-        <span>实时日志 (Logs)</span>
-      </button>
+    <div class="flex items-center gap-1.5 p-1 rounded-2xl bg-zinc-200/60 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 w-fit">
+      <button @click="tab = 'play'" class="px-4 py-1.5 rounded-xl text-xs font-medium transition" :class="tab === 'play' ? 'bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 shadow-xs' : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100'">演练场</button>
+      <button @click="tab = 'models'" class="px-4 py-1.5 rounded-xl text-xs font-medium transition" :class="tab === 'models' ? 'bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 shadow-xs' : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100'">模型矩阵</button>
+      <button @click="tab = 'diagnostics'" class="px-4 py-1.5 rounded-xl text-xs font-medium transition" :class="tab === 'diagnostics' ? 'bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 shadow-xs' : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100'">连通性诊断</button>
+      <button @click="tab = 'logs'; fetchLogs()" class="px-4 py-1.5 rounded-xl text-xs font-medium transition" :class="tab === 'logs' ? 'bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 shadow-xs' : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100'">实时日志</button>
     </div>
 
-    <!-- ============================================== -->
     <!-- Tab 1: Playground 在线调试 -->
-    <!-- ============================================== -->
     <div x-show="tab === 'play'" class="space-y-4">
-      <div class="rounded-2xl bg-zinc-900/50 backdrop-blur border border-zinc-800/80 p-5 space-y-4">
-        <!-- 顶部模型与参数设置条 -->
-        <div class="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-zinc-800/60">
+      <div class="rounded-2xl bg-white dark:bg-zinc-900/60 border border-zinc-200/80 dark:border-zinc-800/80 shadow-xs p-5 space-y-4">
+        <div class="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-zinc-100 dark:border-zinc-800/60">
           <div class="flex items-center gap-3">
-            <span class="text-xs font-medium text-zinc-400">调用模型:</span>
-            <select x-model="playModel" class="bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-1.5 text-xs font-mono text-emerald-400 focus:outline-none focus:border-emerald-500">
+            <span class="text-xs font-medium text-zinc-500 dark:text-zinc-400">调用模型:</span>
+            <select x-model="playModel" class="bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl px-3 py-1.5 text-xs font-mono text-accent focus:outline-none focus:border-accent">
               <template x-for="m in models" :key="m.id">
                 <option :value="m.id" x-text="m.name + (m.is_free ? ' ★ 免费' : '')"></option>
               </template>
@@ -289,32 +286,32 @@ tailwind.config = {
           </div>
 
           <div class="flex items-center gap-4 text-xs">
-            <label class="flex items-center gap-2 cursor-pointer">
-              <input type="checkbox" x-model="playStream" class="rounded bg-zinc-950 border-zinc-800 text-emerald-500 focus:ring-emerald-500" />
-              <span class="text-zinc-300">SSE 流式传输</span>
+            <label class="flex items-center gap-2 cursor-pointer text-zinc-600 dark:text-zinc-300">
+              <input type="checkbox" x-model="playStream" class="rounded border-zinc-300 dark:border-zinc-700 text-accent focus:ring-accent" />
+              <span>SSE 流式传输</span>
             </label>
             <div class="flex items-center gap-2">
               <span class="text-zinc-400">Temp:</span>
               <input type="range" min="0" max="1" step="0.1" x-model.number="playTemperature" class="w-16 accent-emerald-500 cursor-pointer" />
-              <span class="font-mono text-zinc-400 text-[11px]" x-text="playTemperature"></span>
+              <span class="font-mono text-zinc-500 text-[11px]" x-text="playTemperature"></span>
             </div>
           </div>
         </div>
 
         <!-- 快捷提示词预设 -->
         <div class="flex items-center gap-2 flex-wrap">
-          <span class="text-[11px] text-zinc-500">快捷填充:</span>
-          <button @click="playPrompt = '请简明证明你的能力与优势。'" class="px-2 py-0.5 rounded-lg bg-zinc-800/80 hover:bg-zinc-800 text-zinc-300 text-[11px] transition">能力证明</button>
-          <button @click="playPrompt = '请用 Python 编写一段高效的快速排序算法，并附带简要说明。'" class="px-2 py-0.5 rounded-lg bg-zinc-800/80 hover:bg-zinc-800 text-zinc-300 text-[11px] transition">代码生成</button>
-          <button @click="playPrompt = '1+1等于几？请一句话回答。'" class="px-2 py-0.5 rounded-lg bg-zinc-800/80 hover:bg-zinc-800 text-zinc-300 text-[11px] transition">极简问答</button>
+          <span class="text-[11px] text-zinc-400">快捷填充:</span>
+          <button @click="playPrompt = '请简明证明你的能力与优势。'" class="px-2.5 py-1 rounded-lg bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-300 text-[11px] transition">能力证明</button>
+          <button @click="playPrompt = '请用 Python 编写一段高效的快速排序算法，并附带简要说明。'" class="px-2.5 py-1 rounded-lg bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-300 text-[11px] transition">代码生成</button>
+          <button @click="playPrompt = '1+1等于几？请一句话回答。'" class="px-2.5 py-1 rounded-lg bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-300 text-[11px] transition">极简问答</button>
         </div>
 
         <!-- Prompt 输入框 -->
         <div class="space-y-2">
-          <textarea x-model="playPrompt" @keydown.ctrl.enter="sendPlayground()" rows="3" placeholder="输入对话提示词 (按 Ctrl+Enter 快速发送)..." class="w-full bg-zinc-950/80 border border-zinc-800 rounded-xl p-3 text-sm text-zinc-200 placeholder:text-zinc-600 focus:outline-none focus:border-emerald-500/80 focus:ring-1 focus:ring-emerald-500/50 transition"></textarea>
+          <textarea x-model="playPrompt" @keydown.ctrl.enter="sendPlayground()" rows="3" placeholder="输入对话提示词 (按 Ctrl+Enter 发送)..." class="w-full bg-zinc-50 dark:bg-zinc-950 border border-zinc-200/80 dark:border-zinc-800 rounded-xl p-3 text-xs sm:text-sm text-zinc-900 dark:text-zinc-100 focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent"></textarea>
           <div class="flex items-center justify-between">
-            <span class="text-[11px] text-zinc-500">支持快捷键 Ctrl+Enter 直接发送</span>
-            <button @click="sendPlayground()" :disabled="playing" class="px-5 py-2 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white text-xs font-semibold tracking-wide transition shadow-lg shadow-emerald-600/20 flex items-center gap-2">
+            <span class="text-[11px] text-zinc-400">Ctrl+Enter 快速发送</span>
+            <button @click="sendPlayground()" :disabled="playing" class="px-5 py-2 rounded-xl bg-accent hover:bg-accent-hover text-white text-xs font-medium transition disabled:opacity-50 shadow-xs flex items-center gap-2">
               <span x-show="playing" class="w-3.5 h-3.5 border-2 border-white/20 border-t-white rounded-full animate-spin"></span>
               <span x-text="playing ? '正在生成...' : '发送请求'"></span>
             </button>
@@ -322,92 +319,84 @@ tailwind.config = {
         </div>
 
         <!-- 响应结果展示 -->
-        <div class="pt-4 border-t border-zinc-800/60 space-y-3">
-          <!-- 统计药丸栏 -->
+        <div class="pt-4 border-t border-zinc-100 dark:border-zinc-800/60 space-y-3">
           <div class="flex items-center justify-between flex-wrap gap-2 text-xs">
             <div class="flex items-center gap-2">
-              <span class="text-zinc-400 font-medium">模型响应</span>
-              <span x-show="playLatency > 0" class="px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-300 font-mono text-[11px]" x-text="'耗时: ' + playLatency + 'ms'"></span>
-              <span x-show="playTtft > 0" class="px-2 py-0.5 rounded-full bg-teal-500/15 text-teal-300 font-mono text-[11px]" x-text="'TTFT: ' + playTtft + 'ms'"></span>
-              <span x-show="playTokens.total > 0" class="px-2 py-0.5 rounded-full bg-zinc-800 text-zinc-300 font-mono text-[11px]" x-text="'Tokens: ' + playTokens.input + ' in / ' + playTokens.output + ' out'"></span>
+              <span class="text-zinc-500 font-medium">模型响应</span>
+              <span x-show="playLatency > 0" class="px-2 py-0.5 rounded-full bg-accent-light text-accent font-mono text-[11px]" x-text="'耗时: ' + playLatency + 'ms'"></span>
+              <span x-show="playTtft > 0" class="px-2 py-0.5 rounded-full bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300 font-mono text-[11px]" x-text="'TTFT: ' + playTtft + 'ms'"></span>
+              <span x-show="playTokens.total > 0" class="px-2 py-0.5 rounded-full bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300 font-mono text-[11px]" x-text="'Tokens: ' + playTokens.input + ' in / ' + playTokens.output + ' out'"></span>
             </div>
-            <button x-show="playReply" @click="copy(playReply)" class="text-zinc-400 hover:text-zinc-200 text-xs flex items-center gap-1">
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v3"/></svg>
+            <button x-show="playReply" @click="copy(playReply)" class="text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200 text-xs flex items-center gap-1">
               <span>复制正文</span>
             </button>
           </div>
 
-          <!-- 推理思考链折叠卡 (Reasoning Thought) -->
-          <div x-show="playReasoning" class="rounded-xl bg-zinc-950/60 border border-zinc-800/70 p-3 space-y-1.5">
+          <!-- 推理思考链折叠卡 -->
+          <div x-show="playReasoning" class="rounded-xl bg-zinc-50 dark:bg-zinc-950 border border-zinc-200/70 dark:border-zinc-800 p-3 space-y-1.5">
             <div class="flex items-center justify-between cursor-pointer" @click="showReasoning = !showReasoning">
-              <div class="flex items-center gap-2 text-xs text-amber-400 font-medium">
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
+              <div class="flex items-center gap-2 text-xs text-accent font-medium">
+                <span class="w-2 h-2 rounded-full bg-accent"></span>
                 <span>深度思考推理 (Reasoning Thought)</span>
               </div>
-              <span class="text-zinc-500 text-[11px]" x-text="showReasoning ? '收起' : '展开'"></span>
+              <span class="text-zinc-400 text-[11px]" x-text="showReasoning ? '收起' : '展开'"></span>
             </div>
-            <div x-show="showReasoning" class="text-xs font-mono text-zinc-400 whitespace-pre-wrap leading-relaxed max-h-60 overflow-y-auto" x-text="playReasoning"></div>
+            <div x-show="showReasoning" class="text-xs font-mono text-zinc-600 dark:text-zinc-400 whitespace-pre-wrap leading-relaxed max-h-60 overflow-y-auto" x-text="playReasoning"></div>
           </div>
 
           <!-- 正文展示区域 -->
-          <div class="p-4 rounded-xl bg-zinc-950 border border-zinc-800 min-h-[160px] max-h-[500px] overflow-y-auto">
+          <div class="p-4 rounded-xl bg-zinc-50 dark:bg-zinc-950 border border-zinc-200/80 dark:border-zinc-800 min-h-[160px] max-h-[500px] overflow-y-auto">
             <template x-if="!playReply && !playing">
-              <div class="text-xs text-zinc-600 italic">等待发起请求...</div>
+              <div class="text-xs text-zinc-400 italic">等待发起请求...</div>
             </template>
             <template x-if="playing && !playReply">
-              <div class="flex items-center gap-2 text-xs text-emerald-400">
-                <span class="w-2 h-2 rounded-full bg-emerald-400 animate-ping"></span>
+              <div class="flex items-center gap-2 text-xs text-accent">
+                <span class="w-2 h-2 rounded-full bg-accent animate-ping"></span>
                 <span>正在等待首字流式返回 (TTFT)...</span>
               </div>
             </template>
-            <div x-show="playReply" class="text-sm font-sans text-zinc-200 whitespace-pre-wrap leading-relaxed selection:bg-emerald-500/40" x-text="playReply"></div>
+            <div x-show="playReply" class="text-xs sm:text-sm text-zinc-800 dark:text-zinc-200 whitespace-pre-wrap leading-relaxed" x-text="playReply"></div>
           </div>
         </div>
       </div>
     </div>
 
-    <!-- ============================================== -->
     <!-- Tab 2: Models 模型矩阵与映射 -->
-    <!-- ============================================== -->
     <div x-show="tab === 'models'" class="space-y-4">
-      <div class="rounded-2xl bg-zinc-900/50 backdrop-blur border border-zinc-800/80 p-5 space-y-5">
-        <div class="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-zinc-800/60">
+      <div class="rounded-2xl bg-white dark:bg-zinc-900/60 border border-zinc-200/80 dark:border-zinc-800/80 shadow-xs p-5 space-y-5">
+        <div class="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-zinc-100 dark:border-zinc-800/60">
           <div>
-            <h3 class="text-sm font-semibold text-zinc-100">官方免费模型清单</h3>
-            <p class="text-xs text-zinc-400 mt-0.5">实时展示网关支持的 OpenCode 官方免费模型与元数据，已全量转接三协议</p>
+            <h3 class="text-sm font-semibold text-zinc-900 dark:text-zinc-100">官方免费模型清单</h3>
+            <p class="text-xs text-zinc-500 dark:text-zinc-400 mt-0.5">实时展示网关支持的 OpenCode 官方免费模型与元数据</p>
           </div>
           <div class="flex items-center gap-2">
-            <button @click="runDiagnostics()" :disabled="diagTesting" class="px-3 py-1.5 rounded-xl bg-zinc-800 hover:bg-zinc-700 disabled:opacity-50 text-zinc-200 text-xs font-medium transition flex items-center gap-1.5">
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+            <button @click="runDiagnostics()" :disabled="diagTesting" class="px-3 py-1.5 rounded-xl bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 disabled:opacity-50 text-zinc-700 dark:text-zinc-200 text-xs font-medium transition">
               <span x-text="diagTesting ? '正在探测...' : '测速诊断'"></span>
             </button>
-            <button @click="syncModels()" :disabled="syncingModels" class="px-3 py-1.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 disabled:opacity-50 text-white text-xs font-medium transition flex items-center gap-1.5 shadow-sm shadow-emerald-500/20">
-              <svg x-show="!syncingModels" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg>
-              <span x-show="syncingModels" class="w-3 h-3 border-2 border-white/20 border-t-white rounded-full animate-spin"></span>
-              <span x-text="syncingModels ? '正在从官方拉取...' : '从官方同步免费模型'"></span>
+            <button @click="syncModels()" :disabled="syncingModels" class="px-3 py-1.5 rounded-xl bg-accent hover:bg-accent-hover disabled:opacity-50 text-white text-xs font-medium transition shadow-xs">
+              <span x-text="syncingModels ? '正在从官方拉取...' : '同步免费模型'"></span>
             </button>
           </div>
         </div>
 
         <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
           <template x-for="m in models" :key="m.id">
-            <div class="p-3.5 rounded-xl bg-zinc-950/70 border border-zinc-800/80 space-y-2 hover:border-zinc-700 transition">
+            <div class="p-3.5 rounded-xl bg-zinc-50 dark:bg-zinc-950/60 border border-zinc-200/70 dark:border-zinc-800/70 space-y-2">
               <div class="flex items-center justify-between">
                 <div class="flex items-center gap-2">
-                  <span class="font-medium text-xs text-zinc-200 font-mono" x-text="m.id"></span>
-                  <span x-show="m.is_free" class="px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-500/15 text-amber-300 ring-1 ring-amber-500/30">★ 免费</span>
-                  <span x-show="diagResults[m.id]?.status === 'success'" class="text-[10px] px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-300 font-mono" x-text="diagResults[m.id].latency_ms + 'ms'"></span>
-                  <span x-show="diagResults[m.id]?.status === 'error'" class="text-[10px] px-1.5 py-0.5 rounded bg-red-500/15 text-red-300 font-mono">不可用</span>
+                  <span class="font-medium text-xs text-zinc-800 dark:text-zinc-200 font-mono" x-text="m.id"></span>
+                  <span x-show="m.is_free" class="px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-500/10 text-amber-600 dark:text-amber-400 ring-1 ring-amber-500/20">★ 免费</span>
+                  <span x-show="diagResults[m.id]?.status === 'success'" class="text-[10px] px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 font-mono" x-text="diagResults[m.id].latency_ms + 'ms'"></span>
                 </div>
-                <span class="text-[10px] px-1.5 py-0.5 rounded" :class="m.verification_tier === 'heavy' ? 'bg-emerald-500/15 text-emerald-300' : 'bg-teal-500/15 text-teal-300'" x-text="m.verification_tier === 'heavy' ? '重校验 (Sidecar)' : '轻校验'"></span>
+                <span class="text-[10px] px-1.5 py-0.5 rounded" :class="m.verification_tier === 'heavy' ? 'bg-accent-light text-accent' : 'bg-zinc-200 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400'" x-text="m.verification_tier === 'heavy' ? '重校验 (Sidecar)' : '轻校验'"></span>
               </div>
-              <p class="text-xs text-zinc-400 leading-relaxed" x-text="m.description"></p>
-              <div class="flex items-center justify-between text-[11px] text-zinc-500 font-mono pt-1 border-t border-zinc-800/50">
+              <p class="text-xs text-zinc-500 dark:text-zinc-400 leading-relaxed" x-text="m.description"></p>
+              <div class="flex items-center justify-between text-[11px] text-zinc-400 font-mono pt-1 border-t border-zinc-200/50 dark:border-zinc-800/50">
                 <div class="flex items-center gap-3">
-                  <span>上下文: <span class="text-zinc-400" x-text="(m.context_window / 1000) + 'k'"></span></span>
-                  <span x-show="m.support_reasoning" class="text-emerald-400">支持思考链推理</span>
+                  <span>上下文: <span x-text="(m.context_window / 1000) + 'k'"></span></span>
+                  <span x-show="m.support_reasoning" class="text-accent">思考链</span>
                 </div>
-                <button @click="testSingleModel(m.id)" :disabled="diagTesting" class="text-[11px] text-zinc-400 hover:text-emerald-400 transition">
+                <button @click="testSingleModel(m.id)" :disabled="diagTesting" class="text-accent hover:underline">
                   <span x-text="diagResults[m.id]?.status === 'testing' ? '测试中...' : '测速'"></span>
                 </button>
               </div>
@@ -416,24 +405,22 @@ tailwind.config = {
         </div>
 
         <!-- 外部别名映射设置 -->
-        <div class="pt-4 border-t border-zinc-800/70 space-y-3">
-          <div class="flex items-center justify-between">
-            <div>
-              <h4 class="text-xs font-semibold text-zinc-200">客户端别名映射 (Alias Mapping)</h4>
-              <p class="text-[11px] text-zinc-400">当 Cursor 等外部客户端请求 gpt-4o 时，自动路由至指定的 OpenCode 模型</p>
-            </div>
+        <div class="pt-4 border-t border-zinc-100 dark:border-zinc-800/60 space-y-3">
+          <div>
+            <h4 class="text-xs font-semibold text-zinc-900 dark:text-zinc-100">客户端别名映射 (Alias Mapping)</h4>
+            <p class="text-[11px] text-zinc-500 dark:text-zinc-400">当 Cursor 等外部客户端请求 gpt-4o 时，自动路由至指定的 OpenCode 免费模型</p>
           </div>
 
           <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
             <template x-for="(target, source) in aliases" :key="source">
-              <div class="flex items-center justify-between p-2 rounded-xl bg-zinc-950 border border-zinc-800">
-                <div class="font-mono text-zinc-300">
-                  <span class="text-zinc-400" x-text="source"></span>
-                  <span class="text-zinc-600 mx-1.5">➔</span>
-                  <span class="text-emerald-400" x-text="target"></span>
+              <div class="flex items-center justify-between p-2 rounded-xl bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800">
+                <div class="font-mono text-xs">
+                  <span class="text-zinc-500" x-text="source"></span>
+                  <span class="text-zinc-400 mx-1.5">➔</span>
+                  <span class="text-accent font-semibold" x-text="target"></span>
                 </div>
-                <button @click="removeAlias(source)" class="text-zinc-500 hover:text-red-400 p-1">
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                <button @click="removeAlias(source)" class="text-zinc-400 hover:text-red-500 p-1">
+                  ✕
                 </button>
               </div>
             </template>
@@ -441,30 +428,28 @@ tailwind.config = {
 
           <!-- 添加新别名 -->
           <div class="flex gap-2 text-xs pt-1">
-            <input x-model="newAliasKey" placeholder="请求模型别名 (如 gpt-4o)" class="flex-1 bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-1.5 text-zinc-200 focus:outline-none focus:border-emerald-500" />
-            <select x-model="newAliasVal" class="flex-1 bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-1.5 text-zinc-200 focus:outline-none focus:border-emerald-500">
+            <input x-model="newAliasKey" placeholder="请求模型别名 (如 gpt-4o)" class="flex-1 bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl px-3 py-1.5 text-zinc-900 dark:text-zinc-100 focus:outline-none focus:border-accent" />
+            <select x-model="newAliasVal" class="flex-1 bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl px-3 py-1.5 text-zinc-900 dark:text-zinc-100 focus:outline-none focus:border-accent">
               <option value="">映射至目标模型...</option>
               <template x-for="m in models" :key="m.id">
                 <option :value="m.id" x-text="m.id"></option>
               </template>
             </select>
-            <button @click="addAlias()" class="px-4 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-medium transition">添加映射</button>
+            <button @click="addAlias()" class="px-4 py-1.5 rounded-xl bg-accent hover:bg-accent-hover text-white font-medium transition">添加映射</button>
           </div>
         </div>
       </div>
     </div>
 
-    <!-- ============================================== -->
     <!-- Tab 3: Diagnostics 连通性基准诊断 -->
-    <!-- ============================================== -->
     <div x-show="tab === 'diagnostics'" class="space-y-4">
-      <div class="rounded-2xl bg-zinc-900/50 backdrop-blur border border-zinc-800/80 p-5 space-y-4">
+      <div class="rounded-2xl bg-white dark:bg-zinc-900/60 border border-zinc-200/80 dark:border-zinc-800/80 shadow-xs p-5 space-y-4">
         <div class="flex items-center justify-between">
           <div>
-            <h3 class="text-sm font-semibold text-zinc-100">免费模型连通性与准入诊断</h3>
-            <p class="text-xs text-zinc-400 mt-0.5">一键并发探测所有官方免费模型连通率、延迟及准入状态</p>
+            <h3 class="text-sm font-semibold text-zinc-900 dark:text-zinc-100">免费模型连通性与准入诊断</h3>
+            <p class="text-xs text-zinc-500 dark:text-zinc-400 mt-0.5">并发探测所有官方免费模型连通率与延迟状态</p>
           </div>
-          <button @click="runDiagnostics()" :disabled="diagTesting" class="px-4 py-2 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white text-xs font-medium transition shadow-lg shadow-emerald-600/20 flex items-center gap-2">
+          <button @click="runDiagnostics()" :disabled="diagTesting" class="px-4 py-2 rounded-xl bg-accent hover:bg-accent-hover text-white text-xs font-medium transition shadow-xs flex items-center gap-2">
             <span x-show="diagTesting" class="w-3 h-3 border-2 border-white/20 border-t-white rounded-full animate-spin"></span>
             <span x-text="diagTesting ? '正在批量测试...' : '一键开始诊断'"></span>
           </button>
@@ -472,52 +457,48 @@ tailwind.config = {
 
         <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
           <template x-for="m in models.filter(x => x.is_free)" :key="m.id">
-            <div class="p-3.5 rounded-xl bg-zinc-950/70 border border-zinc-800/80 space-y-2">
+            <div class="p-3.5 rounded-xl bg-zinc-50 dark:bg-zinc-950/60 border border-zinc-200/70 dark:border-zinc-800/70 space-y-2">
               <div class="flex items-center justify-between">
-                <span class="font-mono text-xs font-medium text-zinc-200" x-text="m.id"></span>
-                <span x-show="diagResults[m.id]?.status === 'testing'" class="text-[10px] px-2 py-0.5 rounded bg-zinc-800 text-amber-300">正在探测...</span>
-                <span x-show="diagResults[m.id]?.status === 'success'" class="text-[10px] px-2 py-0.5 rounded bg-emerald-500/15 text-emerald-300 ring-1 ring-emerald-500/30">✓ 正常 200</span>
-                <span x-show="diagResults[m.id]?.status === 'error'" class="text-[10px] px-2 py-0.5 rounded bg-red-500/15 text-red-300 ring-1 ring-red-500/30">✗ 异常</span>
+                <span class="font-mono text-xs font-medium text-zinc-800 dark:text-zinc-200" x-text="m.id"></span>
+                <span x-show="diagResults[m.id]?.status === 'testing'" class="text-[10px] px-2 py-0.5 rounded bg-zinc-200 dark:bg-zinc-800 text-amber-600 dark:text-amber-400">正在探测...</span>
+                <span x-show="diagResults[m.id]?.status === 'success'" class="text-[10px] px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 ring-1 ring-emerald-500/20">✓ 正常 200</span>
+                <span x-show="diagResults[m.id]?.status === 'error'" class="text-[10px] px-2 py-0.5 rounded bg-red-500/10 text-red-600 dark:text-red-400 ring-1 ring-red-500/20">✗ 异常</span>
               </div>
-              <div class="flex items-center justify-between text-xs text-zinc-400">
+              <div class="flex items-center justify-between text-xs text-zinc-500 dark:text-zinc-400">
                 <span x-text="m.name"></span>
                 <span class="font-mono text-[11px]" x-show="diagResults[m.id]?.latency_ms" x-text="diagResults[m.id]?.latency_ms + 'ms'"></span>
               </div>
-              <div x-show="diagResults[m.id]?.text" class="text-[11px] text-zinc-300 bg-zinc-900/60 p-2 rounded-lg line-clamp-2" x-text="diagResults[m.id]?.text"></div>
-              <div x-show="diagResults[m.id]?.error" class="text-[11px] text-red-400 bg-red-500/10 p-2 rounded-lg line-clamp-2" x-text="diagResults[m.id]?.error"></div>
+              <div x-show="diagResults[m.id]?.text" class="text-[11px] text-zinc-600 dark:text-zinc-300 bg-white dark:bg-zinc-900/60 p-2 rounded-lg line-clamp-2 border border-zinc-200/60 dark:border-zinc-800/60" x-text="diagResults[m.id]?.text"></div>
+              <div x-show="diagResults[m.id]?.error" class="text-[11px] text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-950/40 p-2 rounded-lg line-clamp-2 border border-red-200/60 dark:border-red-900/60" x-text="diagResults[m.id]?.error"></div>
             </div>
           </template>
         </div>
       </div>
     </div>
 
-    <!-- ============================================== -->
     <!-- Tab 4: Logs 访问日志 -->
-    <!-- ============================================== -->
     <div x-show="tab === 'logs'" class="space-y-4">
-      <div class="rounded-2xl bg-zinc-900/50 backdrop-blur border border-zinc-800/80 p-5 space-y-4">
-        <!-- 筛选与操作 -->
+      <div class="rounded-2xl bg-white dark:bg-zinc-900/60 border border-zinc-200/80 dark:border-zinc-800/80 shadow-xs p-5 space-y-4">
         <div class="flex flex-wrap items-center justify-between gap-3">
           <div class="flex items-center gap-2 text-xs">
-            <span class="text-zinc-400">过滤模型:</span>
-            <input x-model="logFilterModel" @input="fetchLogs()" placeholder="输入模型名称..." class="bg-zinc-950 border border-zinc-800 rounded-lg px-2.5 py-1 text-xs text-zinc-200 focus:outline-none focus:border-emerald-500" />
-            <span class="text-zinc-400 ml-2">协议:</span>
-            <select x-model="logFilterProtocol" @change="fetchLogs()" class="bg-zinc-950 border border-zinc-800 rounded-lg px-2.5 py-1 text-xs text-zinc-200 focus:outline-none focus:border-emerald-500">
+            <span class="text-zinc-500 dark:text-zinc-400">过滤模型:</span>
+            <input x-model="logFilterModel" @input="fetchLogs()" placeholder="输入模型名称..." class="bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl px-2.5 py-1 text-xs text-zinc-900 dark:text-zinc-100 focus:outline-none focus:border-accent" />
+            <span class="text-zinc-500 dark:text-zinc-400 ml-2">协议:</span>
+            <select x-model="logFilterProtocol" @change="fetchLogs()" class="bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl px-2.5 py-1 text-xs text-zinc-900 dark:text-zinc-100 focus:outline-none focus:border-accent">
               <option value="">全部协议</option>
               <option value="OpenAI">OpenAI</option>
               <option value="Anthropic">Anthropic</option>
             </select>
           </div>
           <div class="flex items-center gap-2">
-            <button @click="fetchLogs()" class="px-3 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-xs text-zinc-200 transition">刷新</button>
-            <button @click="clearLogs()" class="px-3 py-1.5 rounded-lg bg-zinc-800 hover:bg-red-900/40 text-xs text-red-400 transition">清空日志</button>
+            <button @click="fetchLogs()" class="px-3 py-1.5 rounded-xl bg-white dark:bg-zinc-800 hover:bg-zinc-100 dark:hover:bg-zinc-700 border border-zinc-200 dark:border-zinc-700 text-xs text-zinc-700 dark:text-zinc-200 transition">刷新</button>
+            <button @click="clearLogs()" class="px-3 py-1.5 rounded-xl bg-red-50 hover:bg-red-100 dark:bg-red-950/40 dark:hover:bg-red-900/60 border border-red-200 dark:border-red-900 text-xs text-red-600 dark:text-red-300 transition">清空日志</button>
           </div>
         </div>
 
-        <!-- 日志表格 -->
-        <div class="overflow-x-auto rounded-xl border border-zinc-800/70">
-          <table class="w-full text-left text-xs">
-            <thead class="bg-zinc-950/80 text-zinc-400 font-medium border-b border-zinc-800">
+        <div class="overflow-x-auto rounded-xl border border-zinc-200/80 dark:border-zinc-800">
+          <table class="w-full text-left text-xs text-zinc-600 dark:text-zinc-300">
+            <thead class="bg-zinc-50/80 dark:bg-zinc-950/50 text-zinc-500 font-medium border-b border-zinc-200/80 dark:border-zinc-800">
               <tr>
                 <th class="py-2.5 px-3">时间</th>
                 <th class="py-2.5 px-3">客户端</th>
@@ -530,27 +511,27 @@ tailwind.config = {
                 <th class="py-2.5 px-3">流式</th>
               </tr>
             </thead>
-            <tbody class="divide-y divide-zinc-800/50">
+            <tbody class="divide-y divide-zinc-100 dark:divide-zinc-800/50 font-mono">
               <template x-if="logs.length === 0">
                 <tr>
-                  <td colspan="9" class="py-8 text-center text-zinc-500 italic">暂无调用记录</td>
+                  <td colspan="9" class="py-8 text-center text-zinc-400 italic">暂无调用记录</td>
                 </tr>
               </template>
               <template x-for="log in logs" :key="log.id">
-                <tr class="hover:bg-zinc-800/30 transition cursor-pointer" @click="toggleLog(log.id)">
-                  <td class="py-2 px-3 font-mono text-zinc-400" x-text="log.time_str"></td>
-                  <td class="py-2 px-3 font-mono text-zinc-400" x-text="log.client_ip"></td>
+                <tr class="hover:bg-zinc-50 dark:hover:bg-zinc-800/20 transition">
+                  <td class="py-2 px-3 text-zinc-400" x-text="log.time_str"></td>
+                  <td class="py-2 px-3 text-zinc-500" x-text="log.client_ip"></td>
                   <td class="py-2 px-3">
-                    <span class="px-1.5 py-0.5 rounded text-[10px] font-mono" :class="log.protocol === 'OpenAI' ? 'bg-indigo-500/15 text-indigo-300' : 'bg-amber-500/15 text-amber-300'" x-text="log.protocol"></span>
+                    <span class="px-1.5 py-0.5 rounded text-[10px] font-mono" :class="log.protocol === 'OpenAI' ? 'bg-indigo-500/10 text-indigo-600 dark:text-indigo-400' : 'bg-amber-500/10 text-amber-600 dark:text-amber-400'" x-text="log.protocol"></span>
                   </td>
-                  <td class="py-2 px-3 font-mono text-zinc-300" x-text="log.model"></td>
-                  <td class="py-2 px-3 font-mono text-emerald-400" x-text="log.actual_model"></td>
+                  <td class="py-2 px-3 text-zinc-800 dark:text-zinc-300" x-text="log.model"></td>
+                  <td class="py-2 px-3 text-accent font-semibold" x-text="log.actual_model"></td>
                   <td class="py-2 px-3">
-                    <span class="font-mono font-medium" :class="log.status_code === 200 ? 'text-emerald-400' : 'text-red-400'" x-text="log.status_code"></span>
+                    <span class="font-medium" :class="log.status_code === 200 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-500'" x-text="log.status_code"></span>
                   </td>
-                  <td class="py-2 px-3 font-mono text-zinc-400" x-text="log.duration_ms + 'ms'"></td>
-                  <td class="py-2 px-3 font-mono text-zinc-400" x-text="log.ttft_ms ? log.ttft_ms + 'ms' : '—'"></td>
-                  <td class="py-2 px-3 font-mono text-zinc-400" x-text="log.stream ? 'SSE' : '非流式'"></td>
+                  <td class="py-2 px-3 text-zinc-500" x-text="log.duration_ms + 'ms'"></td>
+                  <td class="py-2 px-3 text-zinc-400" x-text="log.ttft_ms ? log.ttft_ms + 'ms' : '—'"></td>
+                  <td class="py-2 px-3 text-zinc-400" x-text="log.stream ? 'SSE' : '非流式'"></td>
                 </tr>
               </template>
             </tbody>
@@ -558,15 +539,8 @@ tailwind.config = {
         </div>
       </div>
     </div>
-
-  </div>
-</div>
-
-<!-- 浮动 Toast 提示 -->
-<div x-show="toastVisible" x-cloak class="fixed bottom-6 right-6 z-50 px-4 py-2.5 rounded-xl bg-zinc-900 border border-zinc-700 text-xs font-medium text-zinc-200 shadow-2xl flex items-center gap-2">
-  <span class="w-2 h-2 rounded-full bg-emerald-400"></span>
-  <span x-text="toastMessage"></span>
-</div>
+  </section>
+</main>
 
 </body>
 </html>

@@ -3,6 +3,7 @@
  */
 function app() {
   return {
+    ...createThemeManager("emerald"),
     version: "1.0.0",
     healthOk: false,
     needAdmin: false,
@@ -87,6 +88,7 @@ function app() {
     },
 
     async init() {
+      this.initTheme();
       await this.loadConfig();
       await this.fetchStatus();
       await this.fetchModels();
