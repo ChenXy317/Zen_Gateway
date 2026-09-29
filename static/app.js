@@ -273,9 +273,9 @@ function app() {
           this.models = data.models || [];
           const added = data.data?.added || [];
           if (added.length > 0) {
-            this.toast(`同步成功！新发现 ${added.length} 个官方免费模型: ${added.join(", ")}`);
+            this.toast(`同步成功！新发现 ${added.length} 个官方模型: ${added.join(", ")}`);
           } else {
-            this.toast(`同步完成，当前共 ${data.data?.total || this.models.length} 个官方免费模型（已是最新）`);
+            this.toast(`同步完成，当前共 ${data.data?.total || this.models.length} 个官方模型（已是最新）`);
           }
           if (this.models.length > 0 && !this.playModel) {
             this.playModel = this.models[0].id;

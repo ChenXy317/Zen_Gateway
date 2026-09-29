@@ -15,6 +15,34 @@ from .config import config_manager
 logger = logging.getLogger("zen_gateway.sidecar")
 
 
+def is_port_available(port: int, host: str = "127.0.0.1") -> bool:
+    """检查指定主机与端口是否处于空闲可绑定状态。"""
+    import socket
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            s.bind((host, port))
+            return True
+    except OSError:
+        return False
+
+
+def find_available_port(preferred_port: int, host: str = "127.0.0.1") -> int:
+    """寻找首个空闲端口，优先使用首选配置端口。"""
+    if is_port_available(preferred_port, host):
+        return preferred_port
+
+    candidates = [14096, 14097, 14098, 4097, 4099, 4100, 4101]
+    for p in candidates:
+        if p != preferred_port and is_port_available(p, host):
+            return p
+
+    import socket
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.bind((host, 0))
+        return s.getsockname()[1]
+
+
 class SidecarManager:
     """OpenCode 本地进程与 HTTP 中继客户端管理器。"""
 
@@ -24,17 +52,19 @@ class SidecarManager:
         self._last_health_check: float = 0.0
         self._cached_healthy: bool = False
         self._client: httpx.AsyncClient | None = None
+        self._active_port: int | None = None
 
     @property
     def base_url(self) -> str:
         """获取本地 Sidecar 服务地址。"""
         cfg = config_manager.config.server
-        return f"http://{cfg.sidecar_host}:{cfg.sidecar_port}"
+        port = self._active_port or cfg.sidecar_port
+        return f"http://{cfg.sidecar_host}:{port}"
 
     def get_client(self) -> httpx.AsyncClient:
         """获取或创建内部异步 HTTP 客户端。"""
         if self._client is None or self._client.is_closed:
-            self._client = httpx.AsyncClient(timeout=120.0)
+            self._client = httpx.AsyncClient(timeout=120.0, trust_env=False)
         return self._client
 
     async def is_healthy(self, force: bool = False) -> bool:
@@ -68,25 +98,29 @@ class SidecarManager:
             logger.warning("未检测到本地 opencode CLI 可执行文件，无法自动启动 Sidecar")
             return False
 
-        # 如果已有由本程序启动的旧进程，先终止
-        if self._proc and self._proc.poll() is None:
-            try:
-                self._proc.terminate()
-            except Exception:
-                pass
+        # 确保先前残留的托管进程已被彻底终止
+        self.stop()
+
+        target_port = find_available_port(cfg.sidecar_port, cfg.sidecar_host)
+        if target_port != cfg.sidecar_port:
+            logger.warning(
+                "配置的 Sidecar 端口 %s 当前不可用，已自动切换至可用端口 %s",
+                cfg.sidecar_port,
+                target_port,
+            )
+        self._active_port = target_port
 
         cmd = [
             cli_path,
             "serve",
             "--port",
-            str(cfg.sidecar_port),
+            str(target_port),
             "--hostname",
             cfg.sidecar_host,
         ]
 
         logger.info("正在启动 OpenCode 本地 Sidecar 进程: %s", " ".join(cmd))
         try:
-            # 在后台独立启动
             self._proc = subprocess.Popen(
                 cmd,
                 stdout=subprocess.PIPE,
@@ -97,15 +131,18 @@ class SidecarManager:
             )
             self._is_managed = True
 
-            # 轮询等待服务端口就绪（最多等待 8 秒）
+            # 轮询等待服务端口就绪
             for _ in range(16):
                 await asyncio.sleep(0.5)
                 if await self.is_healthy(force=True):
-                    logger.info("OpenCode Sidecar 进程已成功就绪于 %s", self.base_url)
+                    logger.info("OpenCode Sidecar 进程已就绪于 %s", self.base_url)
+                    if cfg.sidecar_port != target_port:
+                        cfg.sidecar_port = target_port
+                        config_manager.save()
                     return True
                 if self._proc.poll() is not None:
                     _, err = self._proc.communicate()
-                    logger.error("Sidecar 进程异常退出: %s", err)
+                    logger.error("Sidecar 进程异常退出: %s", err.strip())
                     break
         except Exception as e:
             logger.error("启动 Sidecar 进程失败: %e", e)
@@ -113,12 +150,17 @@ class SidecarManager:
         return False
 
     def stop(self) -> None:
-        """停止由本网关托管启动的 Sidecar 进程。"""
-        if self._is_managed and self._proc and self._proc.poll() is None:
+        """停止由本网关托管启动的 Sidecar 进程及子进程树。"""
+        if self._is_managed and self._proc:
+            pid = self._proc.pid
             try:
-                logger.info("正在关闭 OpenCode Sidecar 托管进程...")
-                self._proc.terminate()
-                self._proc.wait(timeout=3)
+                logger.info("正在关闭 OpenCode Sidecar 托管进程 (PID: %s)...", pid)
+                import platform
+                if platform.system() == "Windows":
+                    subprocess.run(["taskkill", "/F", "/T", "/PID", str(pid)], capture_output=True)
+                else:
+                    self._proc.terminate()
+                    self._proc.wait(timeout=3)
             except Exception:
                 try:
                     self._proc.kill()
@@ -126,6 +168,7 @@ class SidecarManager:
                     pass
             self._proc = None
             self._is_managed = False
+            self._cached_healthy = False
 
     async def restart(self) -> bool:
         """重启本地 Sidecar 进程。"""
@@ -137,9 +180,11 @@ class SidecarManager:
         """获取 Sidecar 状态概览。"""
         cfg = config_manager.config.server
         proc_alive = (self._proc is not None and self._proc.poll() is None) if self._is_managed else None
+        active_port = self._active_port or cfg.sidecar_port
         return {
             "healthy": self._cached_healthy,
             "base_url": self.base_url,
+            "port": active_port,
             "is_managed": self._is_managed,
             "proc_alive": proc_alive,
             "pid": self._proc.pid if self._proc and proc_alive else None,
@@ -240,7 +285,7 @@ class SidecarManager:
         async def _event_listener():
             try:
                 import json
-                async with httpx.AsyncClient(timeout=None) as sse_client:
+                async with httpx.AsyncClient(timeout=None, trust_env=False) as sse_client:
                     async with sse_client.stream("GET", f"{self.base_url}/event") as resp:
                         async for line in resp.aiter_lines():
                             if done_flag.is_set():

@@ -29,7 +29,7 @@ class ServerConfig:
     port: int = 8790
     local_api_key: str = ""
     admin_api_key: str = ""
-    default_model: str = "mimo-v2.6-flash-free"
+    default_model: str = ""
     engine_mode: str = "sidecar"  # sidecar | direct | auto
     sidecar_host: str = "127.0.0.1"
     sidecar_port: int = 4096
@@ -64,7 +64,7 @@ class ConfigManager:
                     port=int(srv.get("port", 8790)),
                     local_api_key=srv.get("local_api_key", ""),
                     admin_api_key=srv.get("admin_api_key", ""),
-                    default_model=srv.get("default_model", "mimo-v2.6-flash-free"),
+                    default_model=srv.get("default_model", ""),
                     engine_mode=srv.get("engine_mode", "sidecar"),
                     sidecar_host=srv.get("sidecar_host", "127.0.0.1"),
                     sidecar_port=int(srv.get("sidecar_port", 4096)),

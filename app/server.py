@@ -119,7 +119,7 @@ async def get_status(request: Request, _: None = Depends(require_admin_auth)) ->
         "uptime_seconds": int(time.time() - STARTED_AT),
         "host": cfg.host,
         "port": cfg.port,
-        "default_model": cfg.default_model,
+        "default_model": cfg.default_model or model_registry.get_first_model_id(),
         "engine_mode": cfg.engine_mode,
         "auth": auth_info,
         "sidecar": sidecar_info,
@@ -200,10 +200,16 @@ async def update_aliases(data: dict[str, str], _: None = Depends(require_admin_a
 async def sync_models(_: None = Depends(require_admin_auth)) -> dict[str, Any]:
     """手动从官方 Sidecar 或云端同步最新免费模型列表与状态。"""
     res = await model_registry.sync_free_models(sidecar_base_url=sidecar_manager.base_url)
+    first_id = res.get("first_model") or model_registry.get_first_model_id()
+    cfg = config_manager.config.server
+    if first_id and (not cfg.default_model or cfg.default_model not in model_registry._models):
+        cfg.default_model = first_id
+        config_manager.save()
     return {
         "status": "ok",
         "message": f"成功同步官方模型（总计 {res['total']} 个免费模型，新增 {len(res['added'])} 个）",
         "data": res,
+        "default_model": cfg.default_model,
         "models": model_registry.list_models(),
     }
 
@@ -239,7 +245,7 @@ async def restart_sidecar(_: None = Depends(require_admin_auth)) -> dict[str, An
 @api_router.post("/test")
 async def test_model(data: dict[str, Any], _: None = Depends(require_admin_auth)) -> dict[str, Any]:
     """对指定模型发起单次连通性测试。"""
-    target_model = data.get("model") or config_manager.config.server.default_model
+    target_model = data.get("model") or config_manager.config.server.default_model or model_registry.get_first_model_id()
     prompt = data.get("prompt") or "请用简短一句话说明你是谁。"
 
     from .ir import IRMessage, IRRequest
@@ -573,11 +579,33 @@ def create_app() -> FastAPI:
     @app.on_event("startup")
     async def startup():
         logger.info("Zen Gateway 正在启动...")
-        # 预加载凭据并在配置开启时拉起 Sidecar
         opencode_auth.get_credentials()
         cfg = config_manager.config.server
-        if cfg.auto_start_sidecar and cfg.engine_mode in ("sidecar", "auto"):
-            asyncio.create_task(sidecar_manager.ensure_running())
+
+        async def _init_background():
+            if cfg.auto_start_sidecar and cfg.engine_mode in ("sidecar", "auto"):
+                await sidecar_manager.ensure_running()
+
+            # 启动时执行官方模型更新流程，默认模型设为首个
+            try:
+                res = await model_registry.sync_free_models(sidecar_manager.base_url)
+                first_id = res.get("first_model") or model_registry.get_first_model_id()
+                if first_id:
+                    cfg.default_model = first_id
+                    # 若未配置别名映射则默认绑定到首个模型
+                    if not model_registry.get_aliases():
+                        model_registry.set_aliases({
+                            "gpt-4o": first_id,
+                            "gpt-4o-mini": first_id,
+                            "claude-3-5-sonnet": first_id,
+                        })
+                        config_manager.config.model_aliases = model_registry.get_aliases()
+                    config_manager.save()
+                    logger.info("启动模型同步成功 (共 %d 个)，默认模型已更新为: %s", res.get("total", 0), first_id)
+            except Exception as e:
+                logger.warning("启动自动同步模型流程异常: %s", e)
+
+        asyncio.create_task(_init_background())
 
     @app.on_event("shutdown")
     async def shutdown():

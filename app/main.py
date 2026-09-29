@@ -31,7 +31,7 @@ def main() -> None:
     print(f"  管理面板: http://127.0.0.1:{port}/")
     print(f"  OpenAI 代理端点: http://127.0.0.1:{port}/v1/chat/completions")
     print(f"  Anthropic 代理端点: http://127.0.0.1:{port}/v1/messages")
-    print(f"  默认模型: {cfg.default_model}")
+    print(f"  默认模型: {cfg.default_model or '首个可用模型 (启动时自动同步)'}")
     print("=" * 60)
 
     uvicorn.run(

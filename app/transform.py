@@ -67,7 +67,7 @@ def extract_system_and_messages(raw_messages: list[dict[str, Any]]) -> tuple[str
 
 def parse_openai_request(data: dict[str, Any]) -> IRRequest:
     """解析 OpenAI /v1/chat/completions 入站请求。"""
-    raw_model = data.get("model") or config_manager.config.server.default_model
+    raw_model = data.get("model") or config_manager.config.server.default_model or model_registry.get_first_model_id()
     actual_model = model_registry.resolve_model(raw_model)
     raw_msgs = data.get("messages", [])
     sys_prompt, messages = extract_system_and_messages(raw_msgs)
@@ -85,7 +85,7 @@ def parse_openai_request(data: dict[str, Any]) -> IRRequest:
 
 def parse_anthropic_request(data: dict[str, Any]) -> IRRequest:
     """解析 Anthropic /v1/messages 入站请求。"""
-    raw_model = data.get("model") or config_manager.config.server.default_model
+    raw_model = data.get("model") or config_manager.config.server.default_model or model_registry.get_first_model_id()
     actual_model = model_registry.resolve_model(raw_model)
     raw_msgs = data.get("messages", [])
     sys_field = data.get("system")
