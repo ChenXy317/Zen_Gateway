@@ -53,6 +53,28 @@ async def stream_openai_generator(
                     delta=delta,
                 ))
 
+            elif kind == "tool_calls":
+                tool_calls = item.get("tool_calls", [])
+                tokens = item.get("tokens", {})
+                input_tokens = tokens.get("input", input_tokens)
+                output_tokens = tokens.get("output", output_tokens)
+                total = tokens.get("total", input_tokens + output_tokens)
+                usage = IRUsage(
+                    prompt_tokens=input_tokens,
+                    completion_tokens=output_tokens,
+                    total_tokens=total,
+                    reasoning_tokens=tokens.get("reasoning", 0),
+                )
+                yield sse_format(ir_delta_to_openai_chunk(
+                    chunk_id=resp_id,
+                    model=model,
+                    delta=IRChunkDelta(
+                        finish_reason="tool_calls",
+                        tool_calls=tool_calls,
+                        usage=usage,
+                    ),
+                ))
+
             elif kind == "finish":
                 tokens = item.get("tokens", {})
                 input_tokens = tokens.get("input", input_tokens)
@@ -96,6 +118,7 @@ async def stream_anthropic_generator(
 
     current_block_type: str | None = None
     block_index = 0
+    has_tool_calls = False
 
     try:
         # 1. 消息起始事件
@@ -162,6 +185,40 @@ async def stream_anthropic_generator(
                         "delta": {"type": "text_delta", "text": text_val},
                     }, event="content_block_delta")
 
+            elif kind == "tool_calls":
+                has_tool_calls = True
+                tool_calls = item.get("tool_calls", [])
+                if current_block_type is not None:
+                    yield sse_format({"type": "content_block_stop", "index": block_index}, event="content_block_stop")
+                    block_index += 1
+                    current_block_type = None
+
+                for tc in tool_calls:
+                    fn = tc.get("function", {})
+                    fn_name = fn.get("name", "")
+                    fn_args = fn.get("arguments", "{}")
+                    yield sse_format({
+                        "type": "content_block_start",
+                        "index": block_index,
+                        "content_block": {
+                            "type": "tool_use",
+                            "id": tc.get("id"),
+                            "name": fn_name,
+                            "input": {},
+                        },
+                    }, event="content_block_start")
+                    yield sse_format({
+                        "type": "content_block_delta",
+                        "index": block_index,
+                        "delta": {"type": "input_json_delta", "partial_json": fn_args},
+                    }, event="content_block_delta")
+                    yield sse_format({"type": "content_block_stop", "index": block_index}, event="content_block_stop")
+                    block_index += 1
+
+                tokens = item.get("tokens", {})
+                input_tokens = tokens.get("input", input_tokens)
+                output_tokens = tokens.get("output", output_tokens)
+
             elif kind == "finish":
                 tokens = item.get("tokens", {})
                 input_tokens = tokens.get("input", input_tokens)
@@ -170,8 +227,8 @@ async def stream_anthropic_generator(
         # 关闭最后一个内容块
         if current_block_type is not None:
             yield sse_format({"type": "content_block_stop", "index": block_index}, event="content_block_stop")
-        else:
-            # 无有效输出时补齐空正文块
+        elif not has_tool_calls:
+            # 无有效输出且无工具调用时补齐空正文块
             yield sse_format({
                 "type": "content_block_start",
                 "index": 0,
@@ -180,11 +237,15 @@ async def stream_anthropic_generator(
             yield sse_format({"type": "content_block_stop", "index": 0}, event="content_block_stop")
 
         # 消息完成事件
+        stop_reason = "tool_use" if has_tool_calls else "end_turn"
         yield sse_format({
             "type": "message_delta",
-            "delta": {"stop_reason": "end_turn", "stop_sequence": None},
+            "delta": {"stop_reason": stop_reason, "stop_sequence": None},
             "usage": {"output_tokens": output_tokens},
         }, event="message_delta")
+
+        yield sse_format({"type": "message_stop"}, event="message_stop")
+
 
         yield sse_format({"type": "message_stop"}, event="message_stop")
 

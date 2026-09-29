@@ -52,6 +52,7 @@ class DirectClient:
         messages: list[dict[str, Any]],
         stream: bool = False,
         temperature: float | None = None,
+        top_p: float | None = None,
         max_tokens: int | None = None,
     ) -> Any:
         """向官方 Zen API 发起直连对话补全请求。"""
@@ -65,6 +66,8 @@ class DirectClient:
         }
         if temperature is not None:
             payload["temperature"] = temperature
+        if top_p is not None:
+            payload["top_p"] = top_p
         if max_tokens is not None:
             payload["max_tokens"] = max_tokens
 

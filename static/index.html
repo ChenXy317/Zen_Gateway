@@ -267,6 +267,7 @@ tailwind.config = {
     <!-- Tab 导航栏 -->
     <div class="flex items-center gap-1.5 p-1 rounded-2xl bg-zinc-200/60 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 w-fit">
       <button @click="tab = 'play'" class="px-4 py-1.5 rounded-xl text-xs font-medium transition" :class="tab === 'play' ? 'bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 shadow-xs' : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100'">演练场</button>
+      <button @click="tab = 'profiles'; fetchProfiles(); fetchSkills(); fetchMcp(); fetchAgents();" class="px-4 py-1.5 rounded-xl text-xs font-medium transition" :class="tab === 'profiles' ? 'bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 shadow-xs' : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100'">能力编排</button>
       <button @click="tab = 'models'" class="px-4 py-1.5 rounded-xl text-xs font-medium transition" :class="tab === 'models' ? 'bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 shadow-xs' : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100'">模型矩阵</button>
       <button @click="tab = 'diagnostics'" class="px-4 py-1.5 rounded-xl text-xs font-medium transition" :class="tab === 'diagnostics' ? 'bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 shadow-xs' : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100'">连通性诊断</button>
       <button @click="tab = 'logs'; fetchLogs()" class="px-4 py-1.5 rounded-xl text-xs font-medium transition" :class="tab === 'logs' ? 'bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 shadow-xs' : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100'">实时日志</button>
@@ -356,6 +357,253 @@ tailwind.config = {
               </div>
             </template>
             <div x-show="playReply" class="text-xs sm:text-sm text-zinc-800 dark:text-zinc-200 whitespace-pre-wrap leading-relaxed" x-text="playReply"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Tab: Profiles 参数与能力定制 -->
+    <div x-show="tab === 'profiles'" class="space-y-5">
+      <!-- 顶栏说明与全局保存 -->
+      <div class="rounded-2xl bg-white dark:bg-zinc-900/60 border border-zinc-200/80 dark:border-zinc-800/80 shadow-xs p-5 flex flex-wrap items-center justify-between gap-4">
+        <div>
+          <h3 class="text-sm font-semibold text-zinc-900 dark:text-zinc-100">参数与能力编排总线</h3>
+          <p class="text-xs text-zinc-500 dark:text-zinc-400 mt-0.5">支持自定义 System Prompt、超参数策略控制、挂载技能与 MCP 扩展</p>
+        </div>
+        <button @click="saveProfiles()" :disabled="savingProfiles" class="px-5 py-2 rounded-xl bg-accent hover:bg-accent-hover disabled:opacity-50 text-white text-xs font-medium transition shadow-xs flex items-center gap-2">
+          <span x-show="savingProfiles" class="w-3 h-3 border-2 border-white/20 border-t-white rounded-full animate-spin"></span>
+          <span x-text="savingProfiles ? '正在保存...' : '保存所有预设配置'"></span>
+        </button>
+      </div>
+
+      <!-- 第一排：全局预设 与 本地 MCP 服务监控 -->
+      <div class="grid grid-cols-1 lg:grid-cols-3 gap-5">
+        <!-- 全局通用预设 -->
+        <div class="lg:col-span-2 rounded-2xl bg-white dark:bg-zinc-900/60 border border-zinc-200/80 dark:border-zinc-800/80 shadow-xs p-5 space-y-4">
+          <div class="flex items-center justify-between border-b border-zinc-100 dark:border-zinc-800/60 pb-3">
+            <div class="text-xs font-semibold text-zinc-900 dark:text-zinc-100">全局默认预设 (Global Preset)</div>
+            <span class="text-[11px] text-zinc-400">所有模型无专属配置时的兜底生效策略</span>
+          </div>
+
+          <!-- 全局 System Prompt -->
+          <div>
+            <div class="flex items-center justify-between mb-1.5">
+              <label class="text-xs font-medium text-zinc-700 dark:text-zinc-300">全局 System Prompt</label>
+              <div class="flex items-center gap-2 text-xs">
+                <span class="text-[11px] text-zinc-400">注入模式:</span>
+                <select x-model="profiles.global.system_prompt_mode" class="bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-lg px-2 py-1 text-[11px] text-zinc-800 dark:text-zinc-200 focus:outline-none focus:border-accent">
+                  <option value="prepend">前置追加 (Prepend)</option>
+                  <option value="append">后置追加 (Append)</option>
+                  <option value="override">强制替换 (Override)</option>
+                  <option value="fallback">仅兜底生效 (Fallback)</option>
+                </select>
+              </div>
+            </div>
+            <textarea x-model="profiles.global.system_prompt" rows="3" placeholder="输入全局系统指令或行为规范（支持纯文本或 Markdown）..." class="w-full bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl p-3 text-xs text-zinc-900 dark:text-zinc-100 focus:outline-none focus:border-accent"></textarea>
+          </div>
+
+          <!-- 全局超参数设置 -->
+          <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
+            <div>
+              <label class="block text-[11px] text-zinc-500 dark:text-zinc-400 mb-1">Temperature</label>
+              <input type="number" step="0.1" min="0" max="2" x-model.number="profiles.global.temperature" placeholder="未指定" class="w-full bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl px-3 py-1.5 text-xs text-zinc-900 dark:text-zinc-100 focus:outline-none focus:border-accent" />
+            </div>
+            <div>
+              <label class="block text-[11px] text-zinc-500 dark:text-zinc-400 mb-1">Top P</label>
+              <input type="number" step="0.05" min="0" max="1" x-model.number="profiles.global.top_p" placeholder="未指定" class="w-full bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl px-3 py-1.5 text-xs text-zinc-900 dark:text-zinc-100 focus:outline-none focus:border-accent" />
+            </div>
+            <div>
+              <label class="block text-[11px] text-zinc-500 dark:text-zinc-400 mb-1">Max Tokens</label>
+              <input type="number" step="256" min="1" x-model.number="profiles.global.max_tokens" placeholder="未指定" class="w-full bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl px-3 py-1.5 text-xs text-zinc-900 dark:text-zinc-100 focus:outline-none focus:border-accent" />
+            </div>
+            <div>
+              <label class="block text-[11px] text-zinc-500 dark:text-zinc-400 mb-1">Reasoning 深度</label>
+              <select x-model="profiles.global.reasoning_effort" class="w-full bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl px-2 py-1.5 text-xs text-zinc-900 dark:text-zinc-100 focus:outline-none focus:border-accent">
+                <option value="">默认/透传</option>
+                <option value="none">关闭思考 (none)</option>
+                <option value="low">轻度 (low)</option>
+                <option value="medium">适中 (medium)</option>
+                <option value="high">深度 (high)</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="flex items-center justify-between text-xs pt-2 border-t border-zinc-100 dark:border-zinc-800/60">
+            <label class="flex items-center gap-2 cursor-pointer text-zinc-700 dark:text-zinc-300">
+              <input type="checkbox" x-model="profiles.global.force_hyperparams" class="rounded border-zinc-300 dark:border-zinc-700 text-accent focus:ring-accent" />
+              <span>强制覆盖客户端超参数 (客户端传参时亦强行采用上述配置)</span>
+            </label>
+          </div>
+
+          <!-- 全局激活技能 -->
+          <div class="pt-2 border-t border-zinc-100 dark:border-zinc-800/60">
+            <label class="block text-xs font-medium text-zinc-700 dark:text-zinc-300 mb-2">全局常驻激活技能</label>
+            <div class="flex flex-wrap gap-2">
+              <template x-for="s in skills" :key="s.name">
+                <button type="button" @click="toggleSkillForGlobal(s.name)" class="px-2.5 py-1 rounded-xl text-xs font-mono transition border" :class="(profiles.global.active_skills || []).includes(s.name) ? 'bg-accent-light border-accent text-accent font-medium' : 'bg-zinc-50 dark:bg-zinc-950 border-zinc-200 dark:border-zinc-800 text-zinc-500 hover:border-zinc-400'">
+                  <span x-text="s.name"></span>
+                  <span x-show="(profiles.global.active_skills || []).includes(s.name)" class="ml-1">✓</span>
+                </button>
+              </template>
+              <div x-show="skills.length === 0" class="text-xs text-zinc-400 italic">未发现本地技能</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 本地 MCP 运行状态面板 -->
+        <div class="rounded-2xl bg-white dark:bg-zinc-900/60 border border-zinc-200/80 dark:border-zinc-800/80 shadow-xs p-5 space-y-4">
+          <div class="flex items-center justify-between border-b border-zinc-100 dark:border-zinc-800/60 pb-3">
+            <div class="text-xs font-semibold text-zinc-900 dark:text-zinc-100">MCP 服务监控 (MCP Hub)</div>
+            <button @click="fetchMcp()" class="text-accent text-[11px] hover:underline">刷新</button>
+          </div>
+          <p class="text-xs text-zinc-500 dark:text-zinc-400">OpenCode Sidecar 托管加载的扩展服务运行状态</p>
+
+          <div class="space-y-2">
+            <template x-for="(statusObj, mcpName) in mcpStatus" :key="mcpName">
+              <div class="flex items-center justify-between p-3 rounded-xl bg-zinc-50 dark:bg-zinc-950 border border-zinc-200/70 dark:border-zinc-800/70">
+                <div class="font-mono text-xs font-medium text-zinc-800 dark:text-zinc-200" x-text="mcpName"></div>
+                <div class="flex items-center gap-1.5">
+                  <span class="w-2 h-2 rounded-full" :class="statusObj?.status === 'connected' ? 'bg-emerald-500' : 'bg-amber-400'"></span>
+                  <span class="text-[11px] font-mono capitalize" :class="statusObj?.status === 'connected' ? 'text-emerald-600 dark:text-emerald-400' : 'text-zinc-400'" x-text="statusObj?.status || '离线'"></span>
+                </div>
+              </div>
+            </template>
+            <div x-show="Object.keys(mcpStatus).length === 0" class="text-xs text-zinc-400 py-6 text-center italic">
+              暂无已连接的 MCP 服务或 Sidecar 离线
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 第二排：模型专属预设配置 -->
+      <div class="rounded-2xl bg-white dark:bg-zinc-900/60 border border-zinc-200/80 dark:border-zinc-800/80 shadow-xs p-5 space-y-4">
+        <div class="flex flex-wrap items-center justify-between gap-3 border-b border-zinc-100 dark:border-zinc-800/60 pb-3">
+          <div>
+            <h4 class="text-xs font-semibold text-zinc-900 dark:text-zinc-100">模型专属预设 (Per-Model Profile)</h4>
+            <p class="text-[11px] text-zinc-500 dark:text-zinc-400 mt-0.5">针对特定模型或别名设定独立 System 指令、超参策略与专属 Agent 绑定</p>
+          </div>
+
+          <!-- 模型选择器 -->
+          <div class="flex items-center gap-2">
+            <span class="text-xs text-zinc-500">配置目标:</span>
+            <select :value="selectedProfileModel" @change="selectProfileModel($event.target.value)" class="bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl px-3 py-1.5 text-xs font-mono text-accent focus:outline-none focus:border-accent">
+              <optgroup label="官方可用模型">
+                <template x-for="m in models" :key="m.id">
+                  <option :value="m.id" x-text="m.id"></option>
+                </template>
+              </optgroup>
+              <optgroup label="已配置别名" x-show="Object.keys(aliases).length > 0">
+                <template x-for="(target, aliasName) in aliases" :key="aliasName">
+                  <option :value="aliasName" x-text="aliasName + ' (别名)'"></option>
+                </template>
+              </optgroup>
+            </select>
+          </div>
+        </div>
+
+        <template x-if="selectedProfileModel && profiles.models[selectedProfileModel]">
+          <div class="space-y-4">
+            <!-- 专属 System Prompt -->
+            <div>
+              <div class="flex items-center justify-between mb-1.5">
+                <label class="text-xs font-medium text-zinc-700 dark:text-zinc-300">
+                  专属 System Prompt (<span class="font-mono text-accent" x-text="selectedProfileModel"></span>)
+                </label>
+                <div class="flex items-center gap-2 text-xs">
+                  <span class="text-[11px] text-zinc-400">注入模式:</span>
+                  <select x-model="profiles.models[selectedProfileModel].system_prompt_mode" class="bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-lg px-2 py-1 text-[11px] text-zinc-800 dark:text-zinc-200 focus:outline-none focus:border-accent">
+                    <option value="prepend">前置追加 (Prepend)</option>
+                    <option value="append">后置追加 (Append)</option>
+                    <option value="override">强制替换 (Override)</option>
+                    <option value="fallback">仅兜底生效 (Fallback)</option>
+                  </select>
+                </div>
+              </div>
+              <textarea x-model="profiles.models[selectedProfileModel].system_prompt" rows="3" placeholder="输入为该模型定制的角色设定或行为指令..." class="w-full bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl p-3 text-xs text-zinc-900 dark:text-zinc-100 focus:outline-none focus:border-accent"></textarea>
+            </div>
+
+            <!-- 专属超参设置与 Agent 绑定 -->
+            <div class="grid grid-cols-2 sm:grid-cols-5 gap-3 text-xs">
+              <div>
+                <label class="block text-[11px] text-zinc-500 dark:text-zinc-400 mb-1">Temperature</label>
+                <input type="number" step="0.1" min="0" max="2" x-model.number="profiles.models[selectedProfileModel].temperature" placeholder="继承全局" class="w-full bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl px-3 py-1.5 text-xs text-zinc-900 dark:text-zinc-100 focus:outline-none focus:border-accent" />
+              </div>
+              <div>
+                <label class="block text-[11px] text-zinc-500 dark:text-zinc-400 mb-1">Top P</label>
+                <input type="number" step="0.05" min="0" max="1" x-model.number="profiles.models[selectedProfileModel].top_p" placeholder="继承全局" class="w-full bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl px-3 py-1.5 text-xs text-zinc-900 dark:text-zinc-100 focus:outline-none focus:border-accent" />
+              </div>
+              <div>
+                <label class="block text-[11px] text-zinc-500 dark:text-zinc-400 mb-1">Max Tokens</label>
+                <input type="number" step="256" min="1" x-model.number="profiles.models[selectedProfileModel].max_tokens" placeholder="继承全局" class="w-full bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl px-3 py-1.5 text-xs text-zinc-900 dark:text-zinc-100 focus:outline-none focus:border-accent" />
+              </div>
+              <div>
+                <label class="block text-[11px] text-zinc-500 dark:text-zinc-400 mb-1">Reasoning 深度</label>
+                <select x-model="profiles.models[selectedProfileModel].reasoning_effort" class="w-full bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl px-2 py-1.5 text-xs text-zinc-900 dark:text-zinc-100 focus:outline-none focus:border-accent">
+                  <option value="">继承全局</option>
+                  <option value="none">关闭思考 (none)</option>
+                  <option value="low">轻度 (low)</option>
+                  <option value="medium">适中 (medium)</option>
+                  <option value="high">深度 (high)</option>
+                </select>
+              </div>
+              <div>
+                <label class="block text-[11px] text-zinc-500 dark:text-zinc-400 mb-1">绑定 Agent 角色</label>
+                <select x-model="profiles.models[selectedProfileModel].agent" class="w-full bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl px-2 py-1.5 text-xs text-zinc-900 dark:text-zinc-100 focus:outline-none focus:border-accent">
+                  <option value="">默认 (build)</option>
+                  <template x-for="ag in agents" :key="ag.name">
+                    <option :value="ag.name" x-text="ag.name"></option>
+                  </template>
+                </select>
+              </div>
+            </div>
+
+            <div class="flex items-center justify-between text-xs pt-2 border-t border-zinc-100 dark:border-zinc-800/60">
+              <label class="flex items-center gap-2 cursor-pointer text-zinc-700 dark:text-zinc-300">
+                <input type="checkbox" x-model="profiles.models[selectedProfileModel].force_hyperparams" class="rounded border-zinc-300 dark:border-zinc-700 text-accent focus:ring-accent" />
+                <span>该模型强制覆盖客户端传入的超参数</span>
+              </label>
+            </div>
+
+            <!-- 专属挂载 Skills -->
+            <div class="pt-2 border-t border-zinc-100 dark:border-zinc-800/60">
+              <label class="block text-xs font-medium text-zinc-700 dark:text-zinc-300 mb-2">挂载的 Skills 技能</label>
+              <div class="flex flex-wrap gap-2">
+                <template x-for="s in skills" :key="s.name">
+                  <button type="button" @click="toggleSkillForCurrentModel(s.name)" class="px-2.5 py-1 rounded-xl text-xs font-mono transition border" :class="(profiles.models[selectedProfileModel].active_skills || []).includes(s.name) ? 'bg-accent-light border-accent text-accent font-medium' : 'bg-zinc-50 dark:bg-zinc-950 border-zinc-200 dark:border-zinc-800 text-zinc-500 hover:border-zinc-400'">
+                    <span x-text="s.name"></span>
+                    <span x-show="(profiles.models[selectedProfileModel].active_skills || []).includes(s.name)" class="ml-1">✓</span>
+                  </button>
+                </template>
+                <div x-show="skills.length === 0" class="text-xs text-zinc-400 italic">未发现本地技能</div>
+              </div>
+            </div>
+          </div>
+        </template>
+      </div>
+
+      <!-- 第三排：本地已安装技能库列表 -->
+      <div class="rounded-2xl bg-white dark:bg-zinc-900/60 border border-zinc-200/80 dark:border-zinc-800/80 shadow-xs p-5 space-y-4">
+        <div class="flex items-center justify-between border-b border-zinc-100 dark:border-zinc-800/60 pb-3">
+          <div>
+            <h4 class="text-xs font-semibold text-zinc-900 dark:text-zinc-100">本地已发现技能库 (Skills Library)</h4>
+            <p class="text-[11px] text-zinc-500 dark:text-zinc-400 mt-0.5">从 ~/.config/opencode/skills/ 与网关目录中扫描出的 SKILL 规范</p>
+          </div>
+          <button @click="fetchSkills()" class="px-3 py-1.5 rounded-xl bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-200 text-xs font-medium transition">重新扫描</button>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <template x-for="s in skills" :key="s.name">
+            <div class="p-3.5 rounded-xl bg-zinc-50 dark:bg-zinc-950/60 border border-zinc-200/70 dark:border-zinc-800/70 space-y-2">
+              <div class="flex items-center justify-between">
+                <span class="font-medium text-xs text-zinc-800 dark:text-zinc-200 font-mono" x-text="s.name"></span>
+                <span class="text-[10px] px-1.5 py-0.5 rounded bg-zinc-200 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 font-mono uppercase" x-text="s.source"></span>
+              </div>
+              <p class="text-xs text-zinc-500 dark:text-zinc-400 leading-relaxed" x-text="s.description || '无具体说明'"></p>
+              <div class="text-[10px] font-mono text-zinc-400 truncate pt-1 border-t border-zinc-200/50 dark:border-zinc-800/50" :title="s.path" x-text="s.path"></div>
+            </div>
+          </template>
+          <div x-show="skills.length === 0" class="col-span-2 text-xs text-zinc-400 py-6 text-center italic">
+            未扫描到 SKILL.md 技能文件。您可以将技能放置在 ~/.config/opencode/skills/ 目录下。
           </div>
         </div>
       </div>

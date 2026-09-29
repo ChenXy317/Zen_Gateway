@@ -38,10 +38,32 @@ class ServerConfig:
 
 
 @dataclass
+class ProfileConfig:
+    """模型或全局运行态预设配置。"""
+    system_prompt: str = ""
+    system_prompt_mode: str = "prepend"  # prepend | append | override | fallback
+    temperature: float | None = None
+    top_p: float | None = None
+    max_tokens: int | None = None
+    reasoning_effort: str | None = None  # low | medium | high | none
+    force_hyperparams: bool = False
+    active_skills: list[str] = field(default_factory=list)
+    agent: str = ""
+
+
+@dataclass
+class ProfilesConfig:
+    """预设配置集合（全局与各模型专属）。"""
+    global_profile: ProfileConfig = field(default_factory=ProfileConfig)
+    models: dict[str, ProfileConfig] = field(default_factory=dict)
+
+
+@dataclass
 class AppConfig:
     """网关全局配置聚合体。"""
     server: ServerConfig = field(default_factory=ServerConfig)
     model_aliases: dict[str, str] = field(default_factory=dict)
+    profiles: ProfilesConfig = field(default_factory=ProfilesConfig)
 
 
 class ConfigManager:
@@ -51,6 +73,20 @@ class ConfigManager:
         self.config_path = config_path or Path(__file__).resolve().parent.parent / "config.json"
         self.config = AppConfig()
         self.load()
+
+    def _parse_profile(self, data: dict[str, Any]) -> ProfileConfig:
+        """从字典解析单个 ProfileConfig。"""
+        return ProfileConfig(
+            system_prompt=str(data.get("system_prompt", "") or ""),
+            system_prompt_mode=str(data.get("system_prompt_mode", "prepend") or "prepend"),
+            temperature=float(data["temperature"]) if data.get("temperature") is not None else None,
+            top_p=float(data["top_p"]) if data.get("top_p") is not None else None,
+            max_tokens=int(data["max_tokens"]) if data.get("max_tokens") is not None else None,
+            reasoning_effort=str(data["reasoning_effort"]) if data.get("reasoning_effort") else None,
+            force_hyperparams=bool(data.get("force_hyperparams", False)),
+            active_skills=list(data.get("active_skills", []) or []),
+            agent=str(data.get("agent", "") or ""),
+        )
 
     def load(self) -> None:
         """从磁盘加载配置，不存在则从默认生成。"""
@@ -75,12 +111,21 @@ class ConfigManager:
                 if aliases:
                     self.config.model_aliases = aliases
                     model_registry.set_aliases(aliases)
+
+                prof_data = data.get("profiles", {})
+                global_prof = self._parse_profile(prof_data.get("global", {}))
+                model_profs = {}
+                for m_id, m_cfg in prof_data.get("models", {}).items():
+                    if isinstance(m_cfg, dict):
+                        model_profs[m_id] = self._parse_profile(m_cfg)
+                self.config.profiles = ProfilesConfig(global_profile=global_prof, models=model_profs)
                 return
             except Exception:
                 pass
 
         # 默认配置初始化
         self.config.model_aliases = model_registry.get_aliases()
+        self.config.profiles = ProfilesConfig()
         self.save()
 
     def save(self) -> None:
@@ -88,9 +133,33 @@ class ConfigManager:
         payload = {
             "server": asdict(self.config.server),
             "model_aliases": self.config.model_aliases,
+            "profiles": {
+                "global": asdict(self.config.profiles.global_profile),
+                "models": {k: asdict(v) for k, v in self.config.profiles.models.items()},
+            },
         }
         with open(self.config_path, "w", encoding="utf-8") as f:
             json.dump(payload, f, indent=2, ensure_ascii=False)
+
+    def get_profile_for_model(self, model_name: str) -> tuple[ProfileConfig, ProfileConfig | None]:
+        """获取适用于该模型的全局 Profile 及模型专属 Profile（若存在）。"""
+        actual_model = model_registry.resolve_model(model_name)
+        model_prof = self.config.profiles.models.get(actual_model) or self.config.profiles.models.get(model_name)
+        return self.config.profiles.global_profile, model_prof
+
+    def update_profiles(self, profiles_data: dict[str, Any]) -> None:
+        """更新并持久化全局与模型专属 Profile。"""
+        if "global" in profiles_data and isinstance(profiles_data["global"], dict):
+            self.config.profiles.global_profile = self._parse_profile(profiles_data["global"])
+
+        if "models" in profiles_data and isinstance(profiles_data["models"], dict):
+            new_models = {}
+            for m_id, m_cfg in profiles_data["models"].items():
+                if isinstance(m_cfg, dict):
+                    new_models[m_id] = self._parse_profile(m_cfg)
+            self.config.profiles.models = new_models
+
+        self.save()
 
     def to_public_dict(self) -> dict[str, Any]:
         """导出用于前端安全展示的公开字典。"""
@@ -104,6 +173,10 @@ class ConfigManager:
         return {
             "server": srv,
             "model_aliases": self.config.model_aliases,
+            "profiles": {
+                "global": asdict(self.config.profiles.global_profile),
+                "models": {k: asdict(v) for k, v in self.config.profiles.models.items()},
+            },
         }
 
 

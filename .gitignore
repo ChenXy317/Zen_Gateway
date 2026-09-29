@@ -9,3 +9,5 @@ build/
 .venv/
 venv/
 .env
+.opencode_bridge/
+.playwright-mcp/

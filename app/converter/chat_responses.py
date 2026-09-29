@@ -12,10 +12,14 @@ def ir_to_openai_response(resp: IRResponse) -> dict[str, Any]:
     created = int(time.time())
     message: dict[str, Any] = {
         "role": "assistant",
-        "content": resp.text,
+        "content": resp.text if (resp.text or not resp.tool_calls) else None,
     }
     if resp.reasoning:
         message["reasoning_content"] = resp.reasoning
+    if resp.tool_calls:
+        message["tool_calls"] = resp.tool_calls
+
+    finish_reason = resp.finish_reason or ("tool_calls" if resp.tool_calls else "stop")
 
     return {
         "id": f"chatcmpl-{resp.id}",
@@ -26,7 +30,7 @@ def ir_to_openai_response(resp: IRResponse) -> dict[str, Any]:
             {
                 "index": 0,
                 "message": message,
-                "finish_reason": resp.finish_reason or "stop",
+                "finish_reason": finish_reason,
             }
         ],
         "usage": {
@@ -56,6 +60,8 @@ def ir_delta_to_openai_chunk(
         delta_dict["content"] = delta.text
     if delta.reasoning is not None:
         delta_dict["reasoning_content"] = delta.reasoning
+    if delta.tool_calls is not None:
+        delta_dict["tool_calls"] = delta.tool_calls
 
     chunk: dict[str, Any] = {
         "id": f"chatcmpl-{chunk_id}",
@@ -77,6 +83,7 @@ def ir_delta_to_openai_chunk(
             "total_tokens": delta.usage.total_tokens,
         }
     return chunk
+
 
 
 def openai_models_response(model_list: list[dict[str, Any]]) -> dict[str, Any]:

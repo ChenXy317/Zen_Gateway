@@ -30,6 +30,7 @@ from .models import model_registry
 from .secrets import collect_secrets, is_masked, redact_any
 from .sidecar import sidecar_manager
 from .stream import stream_anthropic_generator, stream_openai_generator
+from .skills import skill_registry
 from .transform import (
     error_payload,
     parse_anthropic_request,
@@ -281,6 +282,51 @@ async def test_model(data: dict[str, Any], _: None = Depends(require_admin_auth)
         }
 
 
+@api_router.get("/skills")
+async def get_skills(_: None = Depends(require_admin_auth)) -> dict[str, Any]:
+    """获取所有已扫描到的本地技能列表。"""
+    skill_registry.reload()
+    return {"skills": skill_registry.list_skills()}
+
+
+@api_router.get("/mcp")
+async def get_mcp(_: None = Depends(require_admin_auth)) -> dict[str, Any]:
+    """获取 Sidecar 所有 MCP 扩展服务的实时运行状态。"""
+    statuses = await sidecar_manager.get_mcp_status()
+    return {"mcp": statuses}
+
+
+@api_router.get("/agents")
+async def get_agents(_: None = Depends(require_admin_auth)) -> dict[str, Any]:
+    """获取 Sidecar 运行态支持的 Agent 列表。"""
+    agents = await sidecar_manager.get_agents()
+    return {"agents": agents}
+
+
+@api_router.get("/profiles")
+async def get_profiles(_: None = Depends(require_admin_auth)) -> dict[str, Any]:
+    """获取当前的全局与模型 Profile 配置。"""
+    from dataclasses import asdict
+    return {
+        "global": asdict(config_manager.config.profiles.global_profile),
+        "models": {k: asdict(v) for k, v in config_manager.config.profiles.models.items()},
+    }
+
+
+@api_router.post("/profiles")
+async def update_profiles(data: dict[str, Any], _: None = Depends(require_admin_auth)) -> dict[str, Any]:
+    """保存并持久化全局与模型专属 Profile 配置。"""
+    config_manager.update_profiles(data)
+    from dataclasses import asdict
+    return {
+        "success": True,
+        "profiles": {
+            "global": asdict(config_manager.config.profiles.global_profile),
+            "models": {k: asdict(v) for k, v in config_manager.config.profiles.models.items()},
+        },
+    }
+
+
 # ==========================
 # 协议代理路由 (/v1/*)
 # ==========================
@@ -307,7 +353,9 @@ async def proxy_chat_completions(
         raise HTTPException(400, "无效的 JSON 请求体")
 
     raw_model = body.get("model", "")
-    ir_req = parse_openai_request(body)
+    header_skills_raw = request.headers.get("x-zen-skills", "")
+    header_skills = [s.strip() for s in header_skills_raw.split(",") if s.strip()] if header_skills_raw else None
+    ir_req = parse_openai_request(body, header_skills=header_skills)
     stream = ir_req.stream
 
     ttft_holder = {"val": None}
@@ -432,7 +480,9 @@ async def proxy_anthropic_messages(
         raise HTTPException(400, "无效的 JSON 请求体")
 
     raw_model = body.get("model", "")
-    ir_req = parse_anthropic_request(body)
+    header_skills_raw = request.headers.get("x-zen-skills", "")
+    header_skills = [s.strip() for s in header_skills_raw.split(",") if s.strip()] if header_skills_raw else None
+    ir_req = parse_anthropic_request(body, header_skills=header_skills)
     stream = ir_req.stream
 
     ttft_holder = {"val": None}

@@ -11,6 +11,8 @@ class IRMessage:
     role: str
     content: str
     name: str | None = None
+    tool_calls: list[dict[str, Any]] = field(default_factory=list)
+    tool_call_id: str | None = None
 
 
 @dataclass
@@ -21,7 +23,13 @@ class IRRequest:
     stream: bool = False
     system_prompt: str | None = None
     temperature: float | None = None
+    top_p: float | None = None
     max_tokens: int | None = None
+    reasoning_effort: str | None = None
+    agent: str | None = None
+    skills: list[str] = field(default_factory=list)
+    tools: list[dict[str, Any]] = field(default_factory=list)
+    tool_choice: Any = None
     protocol: str = "openai"  # openai | anthropic
 
 
@@ -42,6 +50,7 @@ class IRResponse:
     text: str
     reasoning: str | None = None
     finish_reason: str = "stop"
+    tool_calls: list[dict[str, Any]] = field(default_factory=list)
     usage: IRUsage = field(default_factory=IRUsage)
 
 
@@ -51,4 +60,6 @@ class IRChunkDelta:
     text: str | None = None
     reasoning: str | None = None
     finish_reason: str | None = None
+    tool_calls: list[dict[str, Any]] | None = None
     usage: IRUsage | None = None
+

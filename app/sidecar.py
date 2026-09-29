@@ -12,6 +12,10 @@ import httpx
 from .auth import opencode_auth
 from .config import config_manager
 
+import json
+import os
+from pathlib import Path
+
 logger = logging.getLogger("zen_gateway.sidecar")
 
 
@@ -53,6 +57,7 @@ class SidecarManager:
         self._cached_healthy: bool = False
         self._client: httpx.AsyncClient | None = None
         self._active_port: int | None = None
+        self._bridge_dir: Path = Path(__file__).resolve().parent.parent / ".opencode_bridge"
 
     @property
     def base_url(self) -> str:
@@ -66,6 +71,114 @@ class SidecarManager:
         if self._client is None or self._client.is_closed:
             self._client = httpx.AsyncClient(timeout=120.0, trust_env=False)
         return self._client
+
+    def _setup_bridge_environment(self) -> None:
+        """配置网关专属的 OpenCode 隔离环境与桥接插件。"""
+        plugins_dir = self._bridge_dir / "opencode" / "plugins"
+        sessions_dir = self._bridge_dir / "opencode" / "sessions"
+        plugins_dir.mkdir(parents=True, exist_ok=True)
+        sessions_dir.mkdir(parents=True, exist_ok=True)
+
+        bridge_plugin_js = """import fs from 'node:fs';
+import path from 'node:path';
+
+export default async () => {
+  return {
+    "experimental.chat.system.transform": async (input, output) => {
+      const cfgDir = process.env.OPENCODE_CONFIG_DIR;
+      const sessionID = input?.sessionID;
+      if (!sessionID || !cfgDir) return;
+      const ctxFile = path.join(cfgDir, 'sessions', `${sessionID}.json`);
+      if (fs.existsSync(ctxFile)) {
+        try {
+          const ctx = JSON.parse(fs.readFileSync(ctxFile, 'utf8'));
+          if (ctx.system) {
+            if (Array.isArray(output.system)) {
+              output.system.splice(0, output.system.length, ctx.system);
+            }
+            output.system = [ctx.system];
+          }
+        } catch (e) {}
+      }
+    },
+    "chat.params": async (input, output) => {
+      const cfgDir = process.env.OPENCODE_CONFIG_DIR;
+      const sessionID = input?.sessionID;
+      if (!sessionID || !cfgDir) return;
+      const ctxFile = path.join(cfgDir, 'sessions', `${sessionID}.json`);
+      if (fs.existsSync(ctxFile)) {
+        try {
+          const ctx = JSON.parse(fs.readFileSync(ctxFile, 'utf8'));
+          if (ctx.temperature !== undefined && ctx.temperature !== null) {
+            output.temperature = ctx.temperature;
+          }
+          if (ctx.topP !== undefined && ctx.topP !== null) {
+            output.topP = ctx.topP;
+          }
+          if (ctx.maxOutputTokens !== undefined && ctx.maxOutputTokens !== null) {
+            output.maxOutputTokens = ctx.maxOutputTokens;
+          }
+        } catch (e) {}
+      }
+    }
+  };
+};
+"""
+        with open(plugins_dir / "zen_bridge.js", "w", encoding="utf-8") as f:
+            f.write(bridge_plugin_js)
+
+        # 尝试同步用户原有的 MCP 配置以保证服务可用性
+        user_config_path = Path.home() / ".config" / "opencode" / "opencode.jsonc"
+        if not user_config_path.exists():
+            user_config_path = Path.home() / ".config" / "opencode" / "opencode.json"
+
+        bridge_config: dict[str, Any] = {"plugin": []}
+        if user_config_path.exists():
+            try:
+                import json
+                text = user_config_path.read_text(encoding="utf-8", errors="ignore")
+                # 简单去除 jsonc 注释
+                cleaned = "\n".join(l for l in text.splitlines() if not l.strip().startswith("//"))
+                user_data = json.loads(cleaned)
+                if "mcp" in user_data:
+                    bridge_config["mcp"] = user_data["mcp"]
+                if "permission" in user_data:
+                    bridge_config["permission"] = user_data["permission"]
+            except Exception:
+                pass
+
+        with open(self._bridge_dir / "opencode" / "opencode.jsonc", "w", encoding="utf-8") as f:
+            json.dump(bridge_config, f, indent=2, ensure_ascii=False)
+
+    def set_session_context(
+        self,
+        session_id: str,
+        system: str | None = None,
+        temperature: float | None = None,
+        top_p: float | None = None,
+        max_tokens: int | None = None,
+    ) -> None:
+        """持久化单会话参数上下文以供 Sidecar 插件消费。"""
+        sessions_dir = self._bridge_dir / "opencode" / "sessions"
+        sessions_dir.mkdir(parents=True, exist_ok=True)
+        ctx_file = sessions_dir / f"{session_id}.json"
+        data = {
+            "system": system,
+            "temperature": temperature,
+            "topP": top_p,
+            "maxOutputTokens": max_tokens,
+        }
+        with open(ctx_file, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False)
+
+    def clear_session_context(self, session_id: str) -> None:
+        """清理已注销会话的临时配置。"""
+        ctx_file = self._bridge_dir / "opencode" / "sessions" / f"{session_id}.json"
+        if ctx_file.exists():
+            try:
+                ctx_file.unlink()
+            except Exception:
+                pass
 
     async def is_healthy(self, force: bool = False) -> bool:
         """检查 Sidecar 服务健康状况。"""
@@ -85,6 +198,9 @@ class SidecarManager:
 
     async def ensure_running(self) -> bool:
         """确保 Sidecar 进程处于运行就绪状态。"""
+        # 确保桥接环境已建立
+        self._setup_bridge_environment()
+
         if await self.is_healthy():
             return True
 
@@ -119,10 +235,19 @@ class SidecarManager:
             cfg.sidecar_host,
         ]
 
+        env = os.environ.copy()
+        env["XDG_CONFIG_HOME"] = str(self._bridge_dir)
+        env["OPENCODE_CONFIG_DIR"] = str(self._bridge_dir / "opencode")
+        env["XDG_DATA_HOME"] = str(self._bridge_dir / "data")
+        env["XDG_STATE_HOME"] = str(self._bridge_dir / "state")
+        env["XDG_CACHE_HOME"] = str(self._bridge_dir / "cache")
+
         logger.info("正在启动 OpenCode 本地 Sidecar 进程: %s", " ".join(cmd))
         try:
             self._proc = subprocess.Popen(
                 cmd,
+                cwd=str(self._bridge_dir),
+                env=env,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 text=True,
@@ -191,6 +316,32 @@ class SidecarManager:
             "auto_start": cfg.auto_start_sidecar,
         }
 
+    async def get_mcp_status(self) -> dict[str, Any]:
+        """获取 Sidecar 所有 MCP 扩展服务的实时运行状态。"""
+        if not await self.is_healthy():
+            return {}
+        try:
+            client = self.get_client()
+            r = await client.get(f"{self.base_url}/mcp", timeout=3.0)
+            if r.status_code == 200:
+                return r.json()
+        except Exception as e:
+            logger.debug("获取 MCP 状态失败: %s", e)
+        return {}
+
+    async def get_agents(self) -> list[dict[str, Any]]:
+        """获取 Sidecar 支持的 Agent 角色清单。"""
+        if not await self.is_healthy():
+            return []
+        try:
+            client = self.get_client()
+            r = await client.get(f"{self.base_url}/agent", timeout=3.0)
+            if r.status_code == 200:
+                return r.json()
+        except Exception as e:
+            logger.debug("获取 Agent 列表失败: %s", e)
+        return []
+
     # ==========================
     # 消息中继核心操作
     # ==========================
@@ -204,7 +355,8 @@ class SidecarManager:
         return data["id"]
 
     async def delete_session(self, session_id: str) -> None:
-        """在会话结束后清理该会话。"""
+        """在会话结束后清理该会话及临时上下文。"""
+        self.clear_session_context(session_id)
         try:
             client = self.get_client()
             await client.delete(f"{self.base_url}/session/{session_id}", timeout=5.0)
@@ -217,15 +369,36 @@ class SidecarManager:
         model_id: str,
         messages: list[dict[str, Any]],
         system_prompt: str | None = None,
+        agent: str | None = None,
+        skills_prompt: str | None = None,
+        temperature: float | None = None,
+        top_p: float | None = None,
+        max_tokens: int | None = None,
     ) -> dict[str, Any]:
         """向 Sidecar 发送消息并等待完整回复。"""
         client = self.get_client()
-        prompt_text = self._build_prompt_text(messages, system_prompt)
+        effective_sys = system_prompt
+        if skills_prompt:
+            effective_sys = f"{effective_sys}\n\n{skills_prompt}".strip() if effective_sys else skills_prompt
 
-        payload = {
+        self.set_session_context(
+            session_id=session_id,
+            system=effective_sys,
+            temperature=temperature,
+            top_p=top_p,
+            max_tokens=max_tokens,
+        )
+
+        prompt_text = self._build_prompt_text(messages, system_prompt=effective_sys)
+
+        payload: dict[str, Any] = {
             "model": {"providerID": "opencode", "modelID": model_id},
             "parts": [{"type": "text", "text": prompt_text}],
         }
+        if effective_sys:
+            payload["system"] = effective_sys
+        if agent:
+            payload["agent"] = agent
 
         r = await client.post(
             f"{self.base_url}/session/{session_id}/message",
@@ -241,15 +414,36 @@ class SidecarManager:
         model_id: str,
         messages: list[dict[str, Any]],
         system_prompt: str | None = None,
+        agent: str | None = None,
+        skills_prompt: str | None = None,
+        temperature: float | None = None,
+        top_p: float | None = None,
+        max_tokens: int | None = None,
     ) -> AsyncGenerator[dict[str, Any], None]:
         """向 Sidecar 发送请求并通过 /event SSE 实时流式捕获 delta。"""
         client = self.get_client()
-        prompt_text = self._build_prompt_text(messages, system_prompt)
+        effective_sys = system_prompt
+        if skills_prompt:
+            effective_sys = f"{effective_sys}\n\n{skills_prompt}".strip() if effective_sys else skills_prompt
 
-        payload = {
+        self.set_session_context(
+            session_id=session_id,
+            system=effective_sys,
+            temperature=temperature,
+            top_p=top_p,
+            max_tokens=max_tokens,
+        )
+
+        prompt_text = self._build_prompt_text(messages, system_prompt=effective_sys)
+
+        payload: dict[str, Any] = {
             "model": {"providerID": "opencode", "modelID": model_id},
             "parts": [{"type": "text", "text": prompt_text}],
         }
+        if effective_sys:
+            payload["system"] = effective_sys
+        if agent:
+            payload["agent"] = agent
 
         queue: asyncio.Queue[dict[str, Any] | None] = asyncio.Queue()
         sender_res: dict[str, Any] = {}
@@ -351,9 +545,10 @@ class SidecarManager:
         messages: list[dict[str, Any]],
         system_prompt: str | None = None,
     ) -> str:
-        """将标准多轮消息转换为 OpenCode 提示词文本。"""
+        """将标准多轮消息转换为 OpenCode 提示词文本，精确保留工具交互协议。"""
         parts = []
-        if system_prompt:
+
+        if system_prompt and not any(m.get("role") == "system" for m in messages):
             parts.append(f"[System Instruction]\n{system_prompt}\n")
 
         for m in messages:
@@ -368,13 +563,35 @@ class SidecarManager:
                     elif isinstance(b, str):
                         sub_texts.append(b)
                 content = "\n".join(sub_texts)
-            parts.append(f"[{role.capitalize()}]\n{content}\n")
 
-        # 如果最后一条不是用户，增加 User 引导
-        if messages and messages[-1].get("role") != "user":
+            # 结构化工具调用还原
+            tool_calls = m.get("tool_calls")
+            if tool_calls and isinstance(tool_calls, list):
+                call_blocks = []
+                for tc in tool_calls:
+                    fn = tc.get("function", {})
+                    call_blocks.append(
+                        f'<tool_call>\n{{"name": "{fn.get("name")}", "arguments": {fn.get("arguments", "{}")}}}\n</tool_call>'
+                    )
+                content = (content + "\n" + "\n".join(call_blocks)).strip()
+
+            # 结构化工具调用结果还原
+            if role == "tool" or m.get("tool_call_id"):
+                call_id = m.get("tool_call_id", "")
+                parts.append(f'[Tool Result (ID: {call_id})]\n<tool_response id="{call_id}">\n{content}\n</tool_response>\n')
+            elif role == "assistant":
+                parts.append(f"[Assistant]\n{content}\n")
+            elif role == "system":
+                parts.append(f"[System Instruction]\n{content}\n")
+            else:
+                parts.append(f"[{role.capitalize()}]\n{content}\n")
+
+        # 如果最后一条不是用户且不是工具返回，增加 User 引导
+        if messages and messages[-1].get("role") not in ("user", "tool") and not messages[-1].get("tool_call_id"):
             parts.append("[User]\n请继续\n")
 
         return "\n".join(parts).strip()
+
 
 
 sidecar_manager = SidecarManager()

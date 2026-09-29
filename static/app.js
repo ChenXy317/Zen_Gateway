@@ -52,11 +52,32 @@ function app() {
     newAliasKey: "",
     newAliasVal: "",
 
-    tab: "play", // "play" | "models" | "diagnostics" | "logs"
+    tab: "play", // "play" | "profiles" | "models" | "diagnostics" | "logs"
     showLocalKey: false,
     restartingSidecar: false,
     savingConfig: false,
     syncingModels: false,
+
+    // Profiles, Skills, MCP & Agents
+    profiles: {
+      global: {
+        system_prompt: "",
+        system_prompt_mode: "prepend",
+        temperature: null,
+        top_p: null,
+        max_tokens: null,
+        reasoning_effort: "",
+        force_hyperparams: false,
+        active_skills: [],
+        agent: "",
+      },
+      models: {},
+    },
+    skills: [],
+    mcpStatus: {},
+    agents: [],
+    selectedProfileModel: "",
+    savingProfiles: false,
 
     // Playground
     playModel: "mimo-v2.6-flash-free",
@@ -92,6 +113,10 @@ function app() {
       await this.loadConfig();
       await this.fetchStatus();
       await this.fetchModels();
+      await this.fetchProfiles();
+      await this.fetchSkills();
+      await this.fetchMcp();
+      await this.fetchAgents();
       await this.fetchLogs();
 
       if (this.models.length > 0 && !this.playModel) {
@@ -101,6 +126,7 @@ function app() {
       setInterval(() => {
         if (!this.needAdmin) {
           this.fetchStatus();
+          this.fetchMcp();
         }
       }, 8000);
     },
@@ -509,6 +535,129 @@ function app() {
       } catch (e) {
         this.diagResults[mId] = { status: "error", latency_ms: 0, error: e.message };
         this.toast(`${mId} 测试失败: ${e.message}`);
+      }
+    },
+
+    // Profiles & Capability Bus Methods
+    async fetchProfiles() {
+      try {
+        const resp = await fetch("/api/profiles", { headers: this._headers() });
+        if (resp.ok) {
+          const data = await resp.json();
+          this.profiles = {
+            global: {
+              system_prompt: "",
+              system_prompt_mode: "prepend",
+              temperature: null,
+              top_p: null,
+              max_tokens: null,
+              reasoning_effort: "",
+              force_hyperparams: false,
+              active_skills: [],
+              agent: "",
+              ...data.global,
+            },
+            models: data.models || {},
+          };
+          if (!this.selectedProfileModel && this.models.length > 0) {
+            this.selectProfileModel(this.models[0].id);
+          }
+        }
+      } catch (e) {}
+    },
+
+    async saveProfiles() {
+      this.savingProfiles = true;
+      try {
+        const resp = await fetch("/api/profiles", {
+          method: "POST",
+          headers: this._headers(),
+          body: JSON.stringify(this.profiles),
+        });
+        if (resp.ok) {
+          this.toast("预设与参数配置已成功保存");
+          await this.fetchProfiles();
+        } else {
+          this.toast("保存预设失败");
+        }
+      } catch (e) {
+        this.toast("网络错误，保存预设失败");
+      } finally {
+        this.savingProfiles = false;
+      }
+    },
+
+    async fetchSkills() {
+      try {
+        const resp = await fetch("/api/skills", { headers: this._headers() });
+        if (resp.ok) {
+          const data = await resp.json();
+          this.skills = data.skills || [];
+        }
+      } catch (e) {}
+    },
+
+    async fetchMcp() {
+      try {
+        const resp = await fetch("/api/mcp", { headers: this._headers() });
+        if (resp.ok) {
+          const data = await resp.json();
+          this.mcpStatus = data.mcp || {};
+        }
+      } catch (e) {}
+    },
+
+    async fetchAgents() {
+      try {
+        const resp = await fetch("/api/agents", { headers: this._headers() });
+        if (resp.ok) {
+          const data = await resp.json();
+          this.agents = data.agents || [];
+        }
+      } catch (e) {}
+    },
+
+    selectProfileModel(modelId) {
+      this.selectedProfileModel = modelId;
+      if (!this.profiles.models[modelId]) {
+        this.profiles.models[modelId] = {
+          system_prompt: "",
+          system_prompt_mode: "prepend",
+          temperature: null,
+          top_p: null,
+          max_tokens: null,
+          reasoning_effort: "",
+          force_hyperparams: false,
+          active_skills: [],
+          agent: "",
+        };
+      }
+    },
+
+    toggleSkillForGlobal(skillName) {
+      if (!this.profiles.global.active_skills) {
+        this.profiles.global.active_skills = [];
+      }
+      const idx = this.profiles.global.active_skills.indexOf(skillName);
+      if (idx > -1) {
+        this.profiles.global.active_skills.splice(idx, 1);
+      } else {
+        this.profiles.global.active_skills.push(skillName);
+      }
+    },
+
+    toggleSkillForCurrentModel(skillName) {
+      if (!this.selectedProfileModel) return;
+      if (!this.profiles.models[this.selectedProfileModel]) {
+        this.selectProfileModel(this.selectedProfileModel);
+      }
+      const m = this.profiles.models[this.selectedProfileModel];
+      if (!m.active_skills) m.active_skills = [];
+      const idx = m.active_skills.indexOf(skillName);
+      if (idx > -1) {
+        m.active_skills.splice(idx, 1);
+      } else {
+        m.active_skills.push(skillName);
       }
     },
   };
