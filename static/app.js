@@ -113,6 +113,9 @@ function app() {
       await this.loadConfig();
       await this.fetchStatus();
       await this.fetchModels();
+      if (this.models.length === 0) {
+        await this.syncModels(true);
+      }
       await this.fetchProfiles();
       await this.fetchSkills();
       await this.fetchMcp();
@@ -127,6 +130,9 @@ function app() {
         if (!this.needAdmin) {
           this.fetchStatus();
           this.fetchMcp();
+          if (this.models.length === 0) {
+            this.fetchModels();
+          }
         }
       }, 8000);
     },
@@ -287,7 +293,7 @@ function app() {
       } catch (e) {}
     },
 
-    async syncModels() {
+    async syncModels(silent = false) {
       this.syncingModels = true;
       try {
         const resp = await fetch("/api/models/sync", {
@@ -298,19 +304,23 @@ function app() {
           const data = await resp.json();
           this.models = data.models || [];
           const added = data.data?.added || [];
-          if (added.length > 0) {
-            this.toast(`同步成功！新发现 ${added.length} 个官方模型: ${added.join(", ")}`);
-          } else {
-            this.toast(`同步完成，当前共 ${data.data?.total || this.models.length} 个官方模型（已是最新）`);
+          if (!silent) {
+            if (added.length > 0) {
+              this.toast(`同步成功！新发现 ${added.length} 个官方模型: ${added.join(", ")}`);
+            } else {
+              this.toast(`同步完成，当前共 ${data.data?.total || this.models.length} 个官方模型（已是最新）`);
+            }
           }
           if (this.models.length > 0 && !this.playModel) {
             this.playModel = this.models[0].id;
           }
-        } else {
+        } else if (!silent) {
           this.toast("同步失败: " + resp.statusText);
         }
       } catch (e) {
-        this.toast("同步异常: " + e.message);
+        if (!silent) {
+          this.toast("同步异常: " + e.message);
+        }
       } finally {
         this.syncingModels = false;
       }

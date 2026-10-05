@@ -1,8 +1,9 @@
-"""OpenCode 模型列表与映射管理模块。"""
-from __future__ import annotations
-
+import json
+from pathlib import Path
 from dataclasses import dataclass
 from typing import Any
+
+CACHE_FILE = Path(__file__).resolve().parent.parent / ".opencode_bridge" / "models_cache.json"
 
 
 @dataclass
@@ -24,6 +25,40 @@ class ModelRegistry:
     def __init__(self) -> None:
         self._models: dict[str, ModelMeta] = {}
         self._aliases: dict[str, str] = {}
+        self._load_cache()
+
+    def _load_cache(self) -> None:
+        """从持久化缓存中恢复已同步的模型元数据。"""
+        if not CACHE_FILE.is_file():
+            return
+        try:
+            data = json.loads(CACHE_FILE.read_text(encoding="utf-8"))
+            for m in data:
+                mid = m.get("id")
+                if mid:
+                    self._models[mid] = ModelMeta(
+                        id=mid,
+                        name=m.get("name", mid),
+                        provider=m.get("provider", "opencode"),
+                        is_free=m.get("is_free", True),
+                        verification_tier=m.get("verification_tier", "heavy"),
+                        description=m.get("description", ""),
+                        context_window=m.get("context_window", 128000),
+                        support_reasoning=m.get("support_reasoning", False),
+                    )
+        except Exception:
+            pass
+
+    def _save_cache(self) -> None:
+        """将当前模型列表持久化保存至本地缓存文件。"""
+        try:
+            CACHE_FILE.parent.mkdir(parents=True, exist_ok=True)
+            CACHE_FILE.write_text(
+                json.dumps(self.list_models(), ensure_ascii=False, indent=2),
+                encoding="utf-8",
+            )
+        except Exception:
+            pass
 
     def get_first_model_id(self) -> str:
         """获取已加载的首个官方可用模型 ID。"""
@@ -182,6 +217,7 @@ class ModelRegistry:
                 existing.description = desc
                 existing.verification_tier = verification_tier
 
+        self._save_cache()
         return {
             "status": "ok",
             "total": len(self.list_models()),

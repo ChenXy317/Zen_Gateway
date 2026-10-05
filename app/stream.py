@@ -14,7 +14,8 @@ async def stream_openai_generator(
     event_stream: AsyncGenerator[dict[str, Any], None],
     model: str,
     on_ttft: Callable[[float], None] | None = None,
-    on_finish: Callable[[int, int], None] | None = None,
+    on_finish: Callable[..., None] | None = None,
+    enable_thinking: bool | None = None,
 ) -> AsyncGenerator[str, None]:
     """将内部事件流转换为标准 OpenAI /v1/chat/completions SSE 格式。"""
     resp_id = uuid.uuid4().hex[:24]
@@ -22,6 +23,7 @@ async def stream_openai_generator(
     first_chunk = True
     input_tokens = 0
     output_tokens = 0
+    error_occurred: str | None = None
 
     try:
         # 首帧声明 assistant 角色与空内容
@@ -35,13 +37,18 @@ async def stream_openai_generator(
         async for item in event_stream:
             kind = item.get("kind")
             if kind == "delta":
+                field = item.get("field", "text")
+                text_val = item.get("delta", "")
+
+                # 若客户端显式禁用思考则直接丢弃 reasoning 块
+                if field == "reasoning" and enable_thinking is False:
+                    continue
+
                 if first_chunk:
                     first_chunk = False
                     if on_ttft:
                         on_ttft((time.time() - start_time) * 1000)
 
-                field = item.get("field", "text")
-                text_val = item.get("delta", "")
                 delta = IRChunkDelta(
                     reasoning=text_val if field == "reasoning" else None,
                     text=text_val if field == "text" else None,
@@ -93,13 +100,16 @@ async def stream_openai_generator(
                 ))
 
             elif kind == "error":
-                err_msg = item.get("error", "上游处理错误")
-                yield sse_format({"error": {"message": err_msg, "type": "upstream_error"}})
+                error_occurred = item.get("error", "上游处理错误")
+                yield sse_format({"error": {"message": error_occurred, "type": "upstream_error"}})
                 break
 
     finally:
         if on_finish:
-            on_finish(input_tokens, output_tokens)
+            try:
+                on_finish(input_tokens, output_tokens, error_occurred)
+            except TypeError:
+                on_finish(input_tokens, output_tokens)
         yield sse_done()
 
 
@@ -107,7 +117,8 @@ async def stream_anthropic_generator(
     event_stream: AsyncGenerator[dict[str, Any], None],
     model: str,
     on_ttft: Callable[[float], None] | None = None,
-    on_finish: Callable[[int, int], None] | None = None,
+    on_finish: Callable[..., None] | None = None,
+    enable_thinking: bool | None = None,
 ) -> AsyncGenerator[str, None]:
     """将内部事件流转换为标准 Anthropic /v1/messages SSE 格式。"""
     resp_id = uuid.uuid4().hex[:24]
@@ -115,6 +126,7 @@ async def stream_anthropic_generator(
     first_chunk = True
     input_tokens = 0
     output_tokens = 0
+    error_occurred: str | None = None
 
     current_block_type: str | None = None
     block_index = 0
@@ -139,13 +151,18 @@ async def stream_anthropic_generator(
         async for item in event_stream:
             kind = item.get("kind")
             if kind == "delta":
+                field = item.get("field", "text")
+                text_val = item.get("delta", "")
+
+                # 若客户端显式禁用思考则直接丢弃 reasoning 块
+                if field == "reasoning" and enable_thinking is False:
+                    continue
+
                 if first_chunk:
                     first_chunk = False
                     if on_ttft:
                         on_ttft((time.time() - start_time) * 1000)
 
-                field = item.get("field", "text")
-                text_val = item.get("delta", "")
                 output_tokens += 1
 
                 # 处理思考过程与正文内容块状态切换
@@ -224,10 +241,18 @@ async def stream_anthropic_generator(
                 input_tokens = tokens.get("input", input_tokens)
                 output_tokens = tokens.get("output", output_tokens)
 
+            elif kind == "error":
+                error_occurred = item.get("error", "上游处理错误")
+                yield sse_format({
+                    "type": "error",
+                    "error": {"type": "api_error", "message": error_occurred},
+                }, event="error")
+                break
+
         # 关闭最后一个内容块
         if current_block_type is not None:
             yield sse_format({"type": "content_block_stop", "index": block_index}, event="content_block_stop")
-        elif not has_tool_calls:
+        elif not has_tool_calls and not error_occurred:
             # 无有效输出且无工具调用时补齐空正文块
             yield sse_format({
                 "type": "content_block_start",
@@ -236,19 +261,19 @@ async def stream_anthropic_generator(
             }, event="content_block_start")
             yield sse_format({"type": "content_block_stop", "index": 0}, event="content_block_stop")
 
-        # 消息完成事件
-        stop_reason = "tool_use" if has_tool_calls else "end_turn"
-        yield sse_format({
-            "type": "message_delta",
-            "delta": {"stop_reason": stop_reason, "stop_sequence": None},
-            "usage": {"output_tokens": output_tokens},
-        }, event="message_delta")
-
-        yield sse_format({"type": "message_stop"}, event="message_stop")
-
-
-        yield sse_format({"type": "message_stop"}, event="message_stop")
+        if not error_occurred:
+            # 消息完成事件
+            stop_reason = "tool_use" if has_tool_calls else "end_turn"
+            yield sse_format({
+                "type": "message_delta",
+                "delta": {"stop_reason": stop_reason, "stop_sequence": None},
+                "usage": {"output_tokens": output_tokens},
+            }, event="message_delta")
+            yield sse_format({"type": "message_stop"}, event="message_stop")
 
     finally:
         if on_finish:
-            on_finish(input_tokens, output_tokens)
+            try:
+                on_finish(input_tokens, output_tokens, error_occurred)
+            except TypeError:
+                on_finish(input_tokens, output_tokens)

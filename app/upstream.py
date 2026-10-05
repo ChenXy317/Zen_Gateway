@@ -125,7 +125,8 @@ class UpstreamDispatcher:
                 if p_type == "text":
                     text_buf.append(p.get("text", ""))
                 elif p_type == "reasoning":
-                    reasoning_buf.append(p.get("text", ""))
+                    if req.enable_thinking is not False:
+                        reasoning_buf.append(p.get("text", ""))
                 elif p_type == "step-finish":
                     tokens_dict = p.get("tokens", {})
 

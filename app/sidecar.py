@@ -406,7 +406,16 @@ export default async () => {
             timeout=config_manager.config.server.timeout_seconds,
         )
         r.raise_for_status()
-        return r.json()
+        data = r.json()
+        info_err = data.get("info", {}).get("error")
+        if info_err:
+            err_msg = ""
+            if isinstance(info_err, dict):
+                err_msg = info_err.get("data", {}).get("message") or info_err.get("name") or str(info_err)
+            else:
+                err_msg = str(info_err)
+            raise RuntimeError(f"OpenCode 上游调用失败: {err_msg}")
+        return data
 
     async def stream_message(
         self,
@@ -460,6 +469,18 @@ export default async () => {
                 )
                 r.raise_for_status()
                 data = r.json()
+                info_err = data.get("info", {}).get("error")
+                if info_err:
+                    err_msg = ""
+                    if isinstance(info_err, dict):
+                        err_msg = info_err.get("data", {}).get("message") or info_err.get("name") or str(info_err)
+                    else:
+                        err_msg = str(info_err)
+                    sender_res["error"] = f"OpenCode 上游调用失败: {err_msg}"
+                    await queue.put({"kind": "error", "error": sender_res["error"]})
+                    done_flag.set()
+                    return
+
                 toks = {}
                 for p in data.get("parts", []):
                     if p.get("type") == "step-finish":
@@ -470,6 +491,7 @@ export default async () => {
             except Exception as err:
                 sender_res["error"] = str(err)
                 await queue.put({"kind": "error", "error": str(err)})
+                done_flag.set()
             finally:
                 sender_done.set()
 
@@ -479,6 +501,7 @@ export default async () => {
         async def _event_listener():
             try:
                 import json
+                part_types: dict[str, str] = {}
                 async with httpx.AsyncClient(timeout=None, trust_env=False) as sse_client:
                     async with sse_client.stream("GET", f"{self.base_url}/event") as resp:
                         async for line in resp.aiter_lines():
@@ -493,10 +516,20 @@ export default async () => {
                                 if props.get("sessionID") != session_id:
                                     continue
 
-                                if ev_type == "message.part.delta":
+                                if ev_type == "message.part.updated":
+                                    part = props.get("part", {})
+                                    part_id = part.get("id")
+                                    part_type = part.get("type")
+                                    if part_id and part_type:
+                                        part_types[part_id] = part_type
+
+                                elif ev_type == "message.part.delta":
+                                    part_id = props.get("partID")
+                                    part_type = part_types.get(part_id, "text")
+                                    field = "reasoning" if part_type == "reasoning" else props.get("field", "text")
                                     await queue.put({
                                         "kind": "delta",
-                                        "field": props.get("field", "text"),
+                                        "field": field,
                                         "delta": props.get("delta", ""),
                                     })
                                 elif ev_type == "session.idle":

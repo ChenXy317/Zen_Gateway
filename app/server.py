@@ -182,6 +182,11 @@ async def update_config(data: dict[str, Any], _: None = Depends(require_admin_au
 @api_router.get("/models")
 async def list_models(_: None = Depends(require_admin_auth)) -> dict[str, Any]:
     """获取所有模型元信息与别名。"""
+    if not model_registry._models:
+        try:
+            await model_registry.sync_free_models(sidecar_manager.base_url)
+        except Exception:
+            pass
     return {
         "models": model_registry.list_models(),
         "aliases": model_registry.get_aliases(),
@@ -334,6 +339,11 @@ async def update_profiles(data: dict[str, Any], _: None = Depends(require_admin_
 @v1_router.get("/models")
 async def proxy_models(_: None = Depends(require_local_auth)) -> dict[str, Any]:
     """OpenAI 兼容模型列表端点。"""
+    if not model_registry._models:
+        try:
+            await model_registry.sync_free_models(sidecar_manager.base_url)
+        except Exception:
+            pass
     return openai_models_response(model_registry.list_models())
 
 
@@ -366,7 +376,7 @@ async def proxy_chat_completions(
     if stream:
         finish_tokens = {"in": 0, "out": 0}
 
-        def _on_finish(inp: int, outp: int) -> None:
+        def _on_finish(inp: int, outp: int, err: str | None = None) -> None:
             finish_tokens["in"] = inp
             finish_tokens["out"] = outp
             dur = (time.time() - t0) * 1000
@@ -380,12 +390,13 @@ async def proxy_chat_completions(
                 protocol="OpenAI",
                 model=raw_model,
                 actual_model=ir_req.model,
-                status_code=200,
+                status_code=500 if err else 200,
                 duration_ms=round(dur, 2),
                 ttft_ms=round(ttft_holder["val"], 2) if ttft_holder["val"] else None,
                 input_tokens=inp,
                 output_tokens=outp,
                 stream=True,
+                error=err,
             ))
 
         try:
@@ -395,6 +406,7 @@ async def proxy_chat_completions(
                 model=ir_req.model,
                 on_ttft=_set_ttft,
                 on_finish=_on_finish,
+                enable_thinking=ir_req.enable_thinking,
             )
             return StreamingResponse(gen, media_type="text/event-stream")
         except Exception as e:
@@ -493,7 +505,7 @@ async def proxy_anthropic_messages(
     if stream:
         finish_tokens = {"in": 0, "out": 0}
 
-        def _on_finish(inp: int, outp: int) -> None:
+        def _on_finish(inp: int, outp: int, err: str | None = None) -> None:
             finish_tokens["in"] = inp
             finish_tokens["out"] = outp
             dur = (time.time() - t0) * 1000
@@ -507,12 +519,13 @@ async def proxy_anthropic_messages(
                 protocol="Anthropic",
                 model=raw_model,
                 actual_model=ir_req.model,
-                status_code=200,
+                status_code=500 if err else 200,
                 duration_ms=round(dur, 2),
                 ttft_ms=round(ttft_holder["val"], 2) if ttft_holder["val"] else None,
                 input_tokens=inp,
                 output_tokens=outp,
                 stream=True,
+                error=err,
             ))
 
         try:
@@ -522,6 +535,7 @@ async def proxy_anthropic_messages(
                 model=ir_req.model,
                 on_ttft=_set_ttft,
                 on_finish=_on_finish,
+                enable_thinking=ir_req.enable_thinking,
             )
             return StreamingResponse(gen, media_type="text/event-stream")
         except Exception as e:
@@ -634,13 +648,16 @@ def create_app() -> FastAPI:
 
         async def _init_background():
             if cfg.auto_start_sidecar and cfg.engine_mode in ("sidecar", "auto"):
-                await sidecar_manager.ensure_running()
+                try:
+                    await sidecar_manager.ensure_running()
+                except Exception as e:
+                    logger.warning("启动 Sidecar 异常: %s", e)
 
-            # 启动时执行官方模型更新流程，默认模型设为首个
+            # 启动时执行官方模型自动同步
             try:
                 res = await model_registry.sync_free_models(sidecar_manager.base_url)
                 first_id = res.get("first_model") or model_registry.get_first_model_id()
-                if first_id:
+                if first_id and (not cfg.default_model or cfg.default_model not in model_registry._models):
                     cfg.default_model = first_id
                     # 若未配置别名映射则默认绑定到首个模型
                     if not model_registry.get_aliases():
@@ -651,7 +668,9 @@ def create_app() -> FastAPI:
                         })
                         config_manager.config.model_aliases = model_registry.get_aliases()
                     config_manager.save()
-                    logger.info("启动模型同步成功 (共 %d 个)，默认模型已更新为: %s", res.get("total", 0), first_id)
+                    logger.info("启动模型自动同步成功 (共 %d 个)，默认模型已更新为: %s", res.get("total", 0), first_id)
+                elif first_id:
+                    logger.info("启动模型自动同步成功 (共 %d 个)，保持当前配置默认模型: %s", res.get("total", 0), cfg.default_model)
             except Exception as e:
                 logger.warning("启动自动同步模型流程异常: %s", e)
 

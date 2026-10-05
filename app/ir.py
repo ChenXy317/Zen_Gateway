@@ -26,6 +26,7 @@ class IRRequest:
     top_p: float | None = None
     max_tokens: int | None = None
     reasoning_effort: str | None = None
+    enable_thinking: bool | None = None
     agent: str | None = None
     skills: list[str] = field(default_factory=list)
     tools: list[dict[str, Any]] = field(default_factory=list)

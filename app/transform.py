@@ -133,6 +133,8 @@ def apply_profile_to_request(req: IRRequest, dynamic_skills: list[str] | None = 
         req.reasoning_effort = prof_reasoning
     elif not req.reasoning_effort and prof_reasoning:
         req.reasoning_effort = prof_reasoning
+    if req.reasoning_effort in ("none", "off"):
+        req.enable_thinking = False
 
     # 3. 收集并装配 Skills
     active_skills: list[str] = []
@@ -183,6 +185,23 @@ def parse_openai_request(data: dict[str, Any], header_skills: list[str] | None =
     if header_skills:
         combined_dynamic_skills.extend(header_skills)
 
+    enable_thinking = data.get("enable_thinking")
+    if enable_thinking is None:
+        ctk = data.get("chat_template_kwargs")
+        if isinstance(ctk, dict):
+            enable_thinking = ctk.get("enable_thinking")
+    if enable_thinking is None:
+        extra_body = data.get("extra_body")
+        if isinstance(extra_body, dict):
+            enable_thinking = extra_body.get("enable_thinking")
+            if enable_thinking is None:
+                ctk = extra_body.get("chat_template_kwargs")
+                if isinstance(ctk, dict):
+                    enable_thinking = ctk.get("enable_thinking")
+    reasoning_effort = data.get("reasoning_effort")
+    if reasoning_effort in ("none", "off"):
+        enable_thinking = False
+
     req = IRRequest(
         model=actual_model,
         messages=messages,
@@ -191,7 +210,8 @@ def parse_openai_request(data: dict[str, Any], header_skills: list[str] | None =
         temperature=data.get("temperature"),
         top_p=data.get("top_p"),
         max_tokens=data.get("max_tokens") or data.get("max_completion_tokens"),
-        reasoning_effort=data.get("reasoning_effort"),
+        reasoning_effort=reasoning_effort,
+        enable_thinking=enable_thinking,
         tools=tools,
         tool_choice=tool_choice,
         protocol="openai",

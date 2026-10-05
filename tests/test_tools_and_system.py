@@ -187,3 +187,60 @@ def test_sidecar_bridge_environment_setup():
 
     sidecar_manager.clear_session_context(sid)
     assert not ctx_file.exists()
+
+
+def test_parse_openai_request_enable_thinking():
+    # 测试不同层级 extra_body 及 chat_template_kwargs 中的 enable_thinking
+    req1 = parse_openai_request({
+        "model": "mimo-v2.6-flash-free",
+        "messages": [{"role": "user", "content": "hi"}],
+        "enable_thinking": False,
+    })
+    assert req1.enable_thinking is False
+
+    req2 = parse_openai_request({
+        "model": "mimo-v2.6-flash-free",
+        "messages": [{"role": "user", "content": "hi"}],
+        "extra_body": {"chat_template_kwargs": {"enable_thinking": False}},
+    })
+    assert req2.enable_thinking is False
+
+    req3 = parse_openai_request({
+        "model": "mimo-v2.6-flash-free",
+        "messages": [{"role": "user", "content": "hi"}],
+        "reasoning_effort": "none",
+    })
+    assert req3.enable_thinking is False
+
+
+def test_stream_openai_generator_reasoning():
+    import asyncio
+    from app.stream import stream_openai_generator
+
+    async def _test():
+        async def mock_stream():
+            yield {"kind": "delta", "field": "reasoning", "delta": "Thinking..."}
+            yield {"kind": "delta", "field": "text", "delta": "Hello!"}
+            yield {"kind": "finish"}
+
+        # 1. 禁用思考：reasoning 被过滤，仅保留 text
+        gen_off = stream_openai_generator(mock_stream(), "mimo-v2.6-flash-free", enable_thinking=False)
+        chunks_off = [line async for line in gen_off]
+        parsed_off = [json.loads(c[6:]) for c in chunks_off if c.startswith("data: ") and not c.startswith("data: [DONE]")]
+        reasoning_off = [p["choices"][0]["delta"].get("reasoning_content") for p in parsed_off if p.get("choices") and p["choices"][0]["delta"].get("reasoning_content")]
+        content_off = [p["choices"][0]["delta"].get("content") for p in parsed_off if p.get("choices") and p["choices"][0]["delta"].get("content")]
+        assert len(reasoning_off) == 0
+        assert "Hello!" in content_off
+
+        # 2. 正常流式：reasoning 走 reasoning_content，不混入 content
+        gen_on = stream_openai_generator(mock_stream(), "mimo-v2.6-flash-free", enable_thinking=True)
+        chunks_on = [line async for line in gen_on]
+        parsed_on = [json.loads(c[6:]) for c in chunks_on if c.startswith("data: ") and not c.startswith("data: [DONE]")]
+        reasoning_on = [p["choices"][0]["delta"].get("reasoning_content") for p in parsed_on if p.get("choices") and p["choices"][0]["delta"].get("reasoning_content")]
+        content_on = [p["choices"][0]["delta"].get("content") for p in parsed_on if p.get("choices") and p["choices"][0]["delta"].get("content")]
+        assert "Thinking..." in reasoning_on
+        assert "Thinking..." not in content_on
+        assert "Hello!" in content_on
+
+    asyncio.run(_test())
+
