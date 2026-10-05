@@ -77,7 +77,8 @@ class SidecarManager:
         plugins_dir = self._bridge_dir / "opencode" / "plugins"
         sessions_dir = self._bridge_dir / "opencode" / "sessions"
         plugins_dir.mkdir(parents=True, exist_ok=True)
-        sessions_dir.mkdir(parents=True, exist_ok=True)
+        dot_plugins_dir = self._bridge_dir / ".opencode" / "plugins"
+        dot_plugins_dir.mkdir(parents=True, exist_ok=True)
 
         bridge_plugin_js = """import fs from 'node:fs';
 import path from 'node:path';
@@ -92,11 +93,13 @@ export default async () => {
       if (fs.existsSync(ctxFile)) {
         try {
           const ctx = JSON.parse(fs.readFileSync(ctxFile, 'utf8'));
-          if (ctx.system) {
+          if (ctx.system !== undefined && ctx.system !== null) {
+            const target = String(ctx.system).trim();
             if (Array.isArray(output.system)) {
-              output.system.splice(0, output.system.length, ctx.system);
+              output.system.splice(0, output.system.length, target);
+            } else {
+              output.system = target ? [target] : [];
             }
-            output.system = [ctx.system];
           }
         } catch (e) {}
       }
@@ -110,13 +113,22 @@ export default async () => {
         try {
           const ctx = JSON.parse(fs.readFileSync(ctxFile, 'utf8'));
           if (ctx.temperature !== undefined && ctx.temperature !== null) {
-            output.temperature = ctx.temperature;
+            const rawT = Number(ctx.temperature);
+            if (!isNaN(rawT)) {
+              output.temperature = Math.max(0.0, Math.min(1.0, rawT));
+            }
           }
           if (ctx.topP !== undefined && ctx.topP !== null) {
-            output.topP = ctx.topP;
+            const rawP = Number(ctx.topP);
+            if (!isNaN(rawP)) {
+              output.topP = Math.max(0.0, Math.min(1.0, rawP));
+            }
           }
           if (ctx.maxOutputTokens !== undefined && ctx.maxOutputTokens !== null) {
-            output.maxOutputTokens = ctx.maxOutputTokens;
+            const rawM = Number(ctx.maxOutputTokens);
+            if (!isNaN(rawM) && rawM > 0) {
+              output.maxOutputTokens = Math.floor(rawM);
+            }
           }
         } catch (e) {}
       }
@@ -124,7 +136,10 @@ export default async () => {
   };
 };
 """
-        with open(plugins_dir / "zen_bridge.js", "w", encoding="utf-8") as f:
+        zen_bridge_path = plugins_dir / "zen_bridge.js"
+        with open(zen_bridge_path, "w", encoding="utf-8") as f:
+            f.write(bridge_plugin_js)
+        with open(dot_plugins_dir / "zen_bridge.js", "w", encoding="utf-8") as f:
             f.write(bridge_plugin_js)
 
         # 尝试同步用户原有的 MCP 配置以保证服务可用性
@@ -132,12 +147,13 @@ export default async () => {
         if not user_config_path.exists():
             user_config_path = Path.home() / ".config" / "opencode" / "opencode.json"
 
-        bridge_config: dict[str, Any] = {"plugin": []}
+        bridge_config: dict[str, Any] = {
+            "plugin": [zen_bridge_path.resolve().as_uri(), "./plugins/zen_bridge.js"]
+        }
         if user_config_path.exists():
             try:
                 import json
                 text = user_config_path.read_text(encoding="utf-8", errors="ignore")
-                # 简单去除 jsonc 注释
                 cleaned = "\n".join(l for l in text.splitlines() if not l.strip().startswith("//"))
                 user_data = json.loads(cleaned)
                 if "mcp" in user_data:
@@ -148,6 +164,8 @@ export default async () => {
                 pass
 
         with open(self._bridge_dir / "opencode" / "opencode.jsonc", "w", encoding="utf-8") as f:
+            json.dump(bridge_config, f, indent=2, ensure_ascii=False)
+        with open(self._bridge_dir / "opencode.jsonc", "w", encoding="utf-8") as f:
             json.dump(bridge_config, f, indent=2, ensure_ascii=False)
 
     def set_session_context(
@@ -162,10 +180,14 @@ export default async () => {
         sessions_dir = self._bridge_dir / "opencode" / "sessions"
         sessions_dir.mkdir(parents=True, exist_ok=True)
         ctx_file = sessions_dir / f"{session_id}.json"
+
+        safe_temp = round(min(max(float(temperature), 0.0), 1.0), 4) if temperature is not None else None
+        safe_top_p = round(min(max(float(top_p), 0.0), 1.0), 4) if top_p is not None else None
+
         data = {
             "system": system,
-            "temperature": temperature,
-            "topP": top_p,
+            "temperature": safe_temp,
+            "topP": safe_top_p,
             "maxOutputTokens": max_tokens,
         }
         with open(ctx_file, "w", encoding="utf-8") as f:
@@ -581,8 +603,7 @@ export default async () => {
         """将标准多轮消息转换为 OpenCode 提示词文本，精确保留工具交互协议。"""
         parts = []
 
-        if system_prompt and not any(m.get("role") == "system" for m in messages):
-            parts.append(f"[System Instruction]\n{system_prompt}\n")
+        is_single_user = len(messages) == 1 and messages[0].get("role") == "user"
 
         for m in messages:
             role = m.get("role", "user")
@@ -615,9 +636,13 @@ export default async () => {
             elif role == "assistant":
                 parts.append(f"[Assistant]\n{content}\n")
             elif role == "system":
-                parts.append(f"[System Instruction]\n{content}\n")
+                # 系统提示词由插件直接注入到底层模型系统消息中，无需在正文中重复插入
+                pass
             else:
-                parts.append(f"[{role.capitalize()}]\n{content}\n")
+                if is_single_user:
+                    parts.append(content)
+                else:
+                    parts.append(f"[{role.capitalize()}]\n{content}\n")
 
         # 如果最后一条不是用户且不是工具返回，增加 User 引导
         if messages and messages[-1].get("role") not in ("user", "tool") and not messages[-1].get("tool_call_id"):

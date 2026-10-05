@@ -65,9 +65,15 @@ class DirectClient:
             "stream": stream,
         }
         if temperature is not None:
-            payload["temperature"] = temperature
+            try:
+                payload["temperature"] = round(min(max(float(temperature), 0.0), 1.0), 4)
+            except (ValueError, TypeError):
+                pass
         if top_p is not None:
-            payload["top_p"] = top_p
+            try:
+                payload["top_p"] = round(min(max(float(top_p), 0.0), 1.0), 4)
+            except (ValueError, TypeError):
+                pass
         if max_tokens is not None:
             payload["max_tokens"] = max_tokens
 

@@ -116,17 +116,18 @@ def apply_profile_to_request(req: IRRequest, dynamic_skills: list[str] | None = 
     elif req.temperature is None and prof_temp is not None:
         req.temperature = prof_temp
 
-    prof_top_p = (model_prof.top_p if model_prof and model_prof.top_p is not None else global_prof.top_p)
-    if force and prof_top_p is not None:
-        req.top_p = prof_top_p
-    elif req.top_p is None and prof_top_p is not None:
-        req.top_p = prof_top_p
+    # 规范化超参数取值范围以兼容上游模型约束
+    if req.temperature is not None:
+        try:
+            req.temperature = round(min(max(float(req.temperature), 0.0), 1.0), 4)
+        except (ValueError, TypeError):
+            req.temperature = None
 
-    prof_max_tokens = (model_prof.max_tokens if model_prof and model_prof.max_tokens is not None else global_prof.max_tokens)
-    if force and prof_max_tokens is not None:
-        req.max_tokens = prof_max_tokens
-    elif req.max_tokens is None and prof_max_tokens is not None:
-        req.max_tokens = prof_max_tokens
+    if req.top_p is not None:
+        try:
+            req.top_p = round(min(max(float(req.top_p), 0.0), 1.0), 4)
+        except (ValueError, TypeError):
+            req.top_p = None
 
     prof_reasoning = (model_prof.reasoning_effort if model_prof and model_prof.reasoning_effort else global_prof.reasoning_effort)
     if force and prof_reasoning:

@@ -109,5 +109,33 @@ def test_parse_openai_request_with_headers_and_model_suffix():
     assert "extra-skill" in ir_req.skills
 
 
+def test_hyperparams_clamping():
+    """测试超参数大于 1.0 或小于 0.0 时安全限制在 [0.0, 1.0] 范围内。"""
+    config_manager.config.profiles.global_profile = ProfileConfig(force_hyperparams=False)
+    config_manager.config.profiles.models = {}
+
+    req1 = IRRequest(model="test-model", messages=[], temperature=1.5, top_p=1.2)
+    apply_profile_to_request(req1)
+    assert req1.temperature == 1.0
+    assert req1.top_p == 1.0
+
+    req2 = IRRequest(model="test-model", messages=[], temperature=-0.5, top_p=-0.1)
+    apply_profile_to_request(req2)
+    assert req2.temperature == 0.0
+    assert req2.top_p == 0.0
+
+
+def test_sidecar_prompt_text_cleanliness():
+    """测试 Sidecar 构建文本时避免将系统提示词作为前缀插入用户聊天正文。"""
+    from app.sidecar import sidecar_manager
+
+    msgs = [{"role": "user", "content": "测试问题"}]
+    # 系统提示词由插件注入，构建的纯正文不应夹带 [System Instruction]
+    prompt_text = sidecar_manager._build_prompt_text(msgs, system_prompt="使用中文回答")
+    assert "[System Instruction]" not in prompt_text
+    assert prompt_text == "测试问题"
+
+
 if __name__ == "__main__":
     pytest.main(["-v", __file__])
+
