@@ -172,15 +172,15 @@ def test_anthropic_response_converter_tool_calls():
 
 def test_sidecar_bridge_environment_setup():
     sidecar_manager._setup_bridge_environment()
-    bridge_plugin = sidecar_manager._bridge_dir / "opencode" / "plugins" / "zen_bridge.js"
+    bridge_plugin = sidecar_manager._opencode_dir / "plugins" / "zen_bridge.js"
     plugin_code = bridge_plugin.read_text(encoding="utf-8")
     assert "experimental.chat.system.transform" in plugin_code
-    assert "output.system.splice(0, output.system.length, cleanPrompt)" in plugin_code
+    assert "output.system = [String(ctx.system).trim()]" in plugin_code
 
     # 测试会话上下文存取与清理
     sid = "test_ses_999"
     sidecar_manager.set_session_context(sid, system="Custom Sys", temperature=0.7)
-    ctx_file = sidecar_manager._bridge_dir / "opencode" / "sessions" / f"{sid}.json"
+    ctx_file = sidecar_manager._opencode_dir / "sessions" / f"{sid}.json"
     assert ctx_file.exists()
     ctx = json.loads(ctx_file.read_text(encoding="utf-8"))
     assert ctx["system"] == "Custom Sys"

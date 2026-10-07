@@ -18,6 +18,9 @@ logger = logging.getLogger("zen_gateway.upstream")
 
 from .tools import parse_tool_calls_from_text
 
+# 纯文本调用场景下的极简工具约束声明
+API_PURE_MODE_INSTRUCTION = "No tools available."
+
 
 class UpstreamDispatcher:
     """负责将内部统一请求分发给 Sidecar 桥接或直连伪装引擎。"""
@@ -105,11 +108,15 @@ class UpstreamDispatcher:
                 }
                 for m in req.messages
             ]
+            effective_sys = req.system_prompt
+            if not req.tools:
+                effective_sys = f"{effective_sys}\n\n{API_PURE_MODE_INSTRUCTION}".strip() if effective_sys else API_PURE_MODE_INSTRUCTION
+
             raw_data = await sidecar_manager.send_message_non_stream(
                 session_id=session_id,
                 model_id=req.model,
                 messages=msgs,
-                system_prompt=req.system_prompt,
+                system_prompt=effective_sys,
                 agent=req.agent,
                 skills_prompt=skills_prompt,
                 temperature=req.temperature,
@@ -237,12 +244,16 @@ class UpstreamDispatcher:
                 }
                 for m in req.messages
             ]
+            effective_sys = req.system_prompt
+            if not req.tools:
+                effective_sys = f"{effective_sys}\n\n{API_PURE_MODE_INSTRUCTION}".strip() if effective_sys else API_PURE_MODE_INSTRUCTION
+
             full_text_chunks: list[str] = []
             async for ev in sidecar_manager.stream_message(
                 session_id=session_id,
                 model_id=req.model,
                 messages=msgs,
-                system_prompt=req.system_prompt,
+                system_prompt=effective_sys,
                 agent=req.agent,
                 skills_prompt=skills_prompt,
                 temperature=req.temperature,
