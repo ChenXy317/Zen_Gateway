@@ -74,11 +74,37 @@ class SidecarManager:
 
     def _setup_bridge_environment(self) -> None:
         """配置网关专属的 OpenCode 隔离环境与桥接插件。"""
-        plugins_dir = self._bridge_dir / "opencode" / "plugins"
-        sessions_dir = self._bridge_dir / "opencode" / "sessions"
+        opencode_dir = self._bridge_dir / "opencode"
+        plugins_dir = opencode_dir / "plugins"
+        sessions_dir = opencode_dir / "sessions"
+        agents_dir = opencode_dir / "agents"
         plugins_dir.mkdir(parents=True, exist_ok=True)
+        sessions_dir.mkdir(parents=True, exist_ok=True)
+        agents_dir.mkdir(parents=True, exist_ok=True)
+
         dot_plugins_dir = self._bridge_dir / ".opencode" / "plugins"
+        dot_agents_dir = self._bridge_dir / ".opencode" / "agents"
         dot_plugins_dir.mkdir(parents=True, exist_ok=True)
+        dot_agents_dir.mkdir(parents=True, exist_ok=True)
+
+        # 同步官方凭据至隔离环境
+        auth_src = opencode_auth.find_auth_file()
+        if auth_src and auth_src.is_file():
+            bridge_data_opencode = self._bridge_dir / "data" / "opencode"
+            bridge_data_opencode.mkdir(parents=True, exist_ok=True)
+            try:
+                import shutil
+                shutil.copy2(auth_src, bridge_data_opencode / "auth.json")
+            except Exception:
+                pass
+
+        # 清理历史可能残留的限制性 agent 定义
+        for p in [agents_dir / "zen.md", dot_agents_dir / "zen.md"]:
+            if p.exists():
+                try:
+                    p.unlink()
+                except Exception:
+                    pass
 
         bridge_plugin_js = """import fs from 'node:fs';
 import path from 'node:path';
@@ -88,19 +114,15 @@ export default async () => {
     "experimental.chat.system.transform": async (input, output) => {
       const cfgDir = process.env.OPENCODE_CONFIG_DIR;
       const sessionID = input?.sessionID;
-      if (!sessionID || !cfgDir) return;
+      if (!sessionID || !cfgDir || !Array.isArray(output?.system)) return;
       const ctxFile = path.join(cfgDir, 'sessions', `${sessionID}.json`);
       if (fs.existsSync(ctxFile)) {
         try {
           const ctx = JSON.parse(fs.readFileSync(ctxFile, 'utf8'));
-          if (ctx.system !== undefined && ctx.system !== null) {
-            const target = String(ctx.system).trim();
-            if (Array.isArray(output.system)) {
-              output.system.splice(0, output.system.length, target);
-            } else {
-              output.system = target ? [target] : [];
-            }
-          }
+          const target = (ctx.system !== undefined && ctx.system !== null) ? String(ctx.system).trim() : '';
+          // 原地替换系统提示词，彻底剥离 OpenCode 原生 CLI 约束与人设
+          const cleanPrompt = target || "You are a helpful, knowledgeable, and honest AI assistant.";
+          output.system.splice(0, output.system.length, cleanPrompt);
         } catch (e) {}
       }
     },
@@ -142,26 +164,10 @@ export default async () => {
         with open(dot_plugins_dir / "zen_bridge.js", "w", encoding="utf-8") as f:
             f.write(bridge_plugin_js)
 
-        # 尝试同步用户原有的 MCP 配置以保证服务可用性
-        user_config_path = Path.home() / ".config" / "opencode" / "opencode.jsonc"
-        if not user_config_path.exists():
-            user_config_path = Path.home() / ".config" / "opencode" / "opencode.json"
-
+        # 构造桥接配置，加载转码与参数插件
         bridge_config: dict[str, Any] = {
             "plugin": [zen_bridge_path.resolve().as_uri(), "./plugins/zen_bridge.js"]
         }
-        if user_config_path.exists():
-            try:
-                import json
-                text = user_config_path.read_text(encoding="utf-8", errors="ignore")
-                cleaned = "\n".join(l for l in text.splitlines() if not l.strip().startswith("//"))
-                user_data = json.loads(cleaned)
-                if "mcp" in user_data:
-                    bridge_config["mcp"] = user_data["mcp"]
-                if "permission" in user_data:
-                    bridge_config["permission"] = user_data["permission"]
-            except Exception:
-                pass
 
         with open(self._bridge_dir / "opencode" / "opencode.jsonc", "w", encoding="utf-8") as f:
             json.dump(bridge_config, f, indent=2, ensure_ascii=False)
@@ -263,6 +269,12 @@ export default async () => {
         env["XDG_DATA_HOME"] = str(self._bridge_dir / "data")
         env["XDG_STATE_HOME"] = str(self._bridge_dir / "state")
         env["XDG_CACHE_HOME"] = str(self._bridge_dir / "cache")
+        auth_src = opencode_auth.find_auth_file()
+        if auth_src and auth_src.is_file():
+            try:
+                env["OPENCODE_AUTH_CONTENT"] = auth_src.read_text(encoding="utf-8")
+            except Exception:
+                pass
 
         logger.info("正在启动 OpenCode 本地 Sidecar 进程: %s", " ".join(cmd))
         try:
@@ -417,10 +429,10 @@ export default async () => {
             "model": {"providerID": "opencode", "modelID": model_id},
             "parts": [{"type": "text", "text": prompt_text}],
         }
-        if effective_sys:
-            payload["system"] = effective_sys
         if agent:
             payload["agent"] = agent
+        if effective_sys:
+            payload["system"] = effective_sys
 
         r = await client.post(
             f"{self.base_url}/session/{session_id}/message",
@@ -471,10 +483,10 @@ export default async () => {
             "model": {"providerID": "opencode", "modelID": model_id},
             "parts": [{"type": "text", "text": prompt_text}],
         }
-        if effective_sys:
-            payload["system"] = effective_sys
         if agent:
             payload["agent"] = agent
+        if effective_sys:
+            payload["system"] = effective_sys
 
         queue: asyncio.Queue[dict[str, Any] | None] = asyncio.Queue()
         sender_res: dict[str, Any] = {}

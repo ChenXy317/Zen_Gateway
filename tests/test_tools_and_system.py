@@ -173,8 +173,9 @@ def test_anthropic_response_converter_tool_calls():
 def test_sidecar_bridge_environment_setup():
     sidecar_manager._setup_bridge_environment()
     bridge_plugin = sidecar_manager._bridge_dir / "opencode" / "plugins" / "zen_bridge.js"
-    assert bridge_plugin.exists()
-    assert "experimental.chat.system.transform" in bridge_plugin.read_text(encoding="utf-8")
+    plugin_code = bridge_plugin.read_text(encoding="utf-8")
+    assert "experimental.chat.system.transform" in plugin_code
+    assert "output.system.splice(0, output.system.length, cleanPrompt)" in plugin_code
 
     # 测试会话上下文存取与清理
     sid = "test_ses_999"

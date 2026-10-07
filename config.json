@@ -7,7 +7,7 @@
     "default_model": "mimo-v2.6-flash-free",
     "engine_mode": "sidecar",
     "sidecar_host": "127.0.0.1",
-    "sidecar_port": 14096,
+    "sidecar_port": 4096,
     "auto_start_sidecar": true,
     "timeout_seconds": 120.0
   },
